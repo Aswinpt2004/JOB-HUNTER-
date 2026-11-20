@@ -1,0 +1,272 @@
+{
+  "contact": {
+    "name": "Aswin P T",
+    "email": "aswinpt2004@gmail.com",
+    "phone": "+91 88913 81713",
+    "location": "Thiruvananthapuram, Kerala, India",
+    "linkedin": "https://www.linkedin.com/in/aswinpt2004",
+    "github": "https://github.com/Aswinpt2004",
+    "portfolio": "https://codedbyaswinpt.vercel.app/"
+  },
+  "summary": "AI/ML engineer (M.Sc. Computer Science, Machine Intelligence, 2026) with hands-on experience building computer-vision systems for drone and surveillance video, and production LLM applications in Python. At Quantumweave Intelligence, I develop detection, tracking, and intrusion-analytics pipelines with GPU inference, and surveillance dashboards. Experienced in agentic workflows, RAG systems, document extraction, and federated graph learning. Strong in Python and PyTorch, focused on false-positive reduction, clean evaluation, and collaborative Git workflows.",
+  "summary_facts": [
+    "AI/ML engineer (M.Sc. Computer Science, Machine Intelligence, 2026) with about 6 months of professional experience across research and industry internships.",
+    "At Quantumweave Intelligence, develops computer-vision pipelines (YOLO, RT-DETR, ByteTrack) for drone and surveillance video with GPU inference optimization and false-positive reduction.",
+    "Built an offline Malayalam-English RAG chatbot using Llama-3 and Ollama, plus an agentic storefront platform producing Pydantic-validated structured outputs.",
+    "Engineered an automated PDF/DOCX medical report extraction pipeline and contributed FastAPI backend modules to a clinical PI-RADS reporting platform at Synbrains Solutions.",
+    "Designed FedGraph-Shield, a hierarchical federated graph neural network framework with differential privacy for fraud detection across banking networks.",
+    "Strong technical foundation in Python, PyTorch, FastAPI, Django, Docker, and REST APIs with rigorous evaluation and clean documentation."
+  ],
+  "skills": {
+    "Programming": [
+      "Python",
+      "JavaScript",
+      "TypeScript",
+      "SQL",
+      "C",
+      "C++"
+    ],
+    "GenAI & Agents": [
+      "LLM/VLM API integration (Gemini API)",
+      "Llama-3 via Ollama",
+      "retrieval-augmented generation (RAG)",
+      "agentic AI workflows",
+      "prompt design",
+      "structured outputs (Pydantic)",
+      "hybrid rule-based + LLM systems"
+    ],
+    "Data & Experimentation": [
+      "Data collection and preprocessing",
+      "annotation",
+      "PDF/DOCX/image extraction",
+      "Pydantic schema validation",
+      "model benchmarking",
+      "experiment documentation"
+    ],
+    "Backend & Integration": [
+      "FastAPI",
+      "Flask",
+      "Django",
+      "Node.js",
+      "REST APIs",
+      "PostgreSQL",
+      "MySQL"
+    ],
+    "Data & Cloud": [
+      "Data preparation and annotation",
+      "PDF/DOCX extraction",
+      "SQL",
+      "PostgreSQL",
+      "Google Cloud Platform (GCP)",
+      "Docker (deployment)",
+      "Git",
+      "Jupyter",
+      "Google Colab"
+    ],
+    "ML & Evaluation": [
+      "PyTorch",
+      "TensorFlow",
+      "OpenCV",
+      "model benchmarking",
+      "experiment design",
+      "inference optimisation",
+      "privacy-preserving ML (Flower, differential privacy)"
+    ]
+  },
+  "experience": [
+    {
+      "company": "Quantumweave Intelligence",
+      "role": "Research Assistant – AI & Data Science",
+      "location": "Thiruvananthapuram, India",
+      "start_date": "Aug 2026",
+      "end_date": "Present",
+      "bullets": [
+        {
+          "id": "exp1b1",
+          "text": "Build and optimise computer-vision pipelines for UAV and surveillance video: object detection (YOLO, RT-DETR, RF-DETR), multi-object tracking (ByteTrack/BoT-SORT), and crowd counting (CSRNet), with GPU inference and configurable presets."
+        },
+        {
+          "id": "exp1b2",
+          "text": "Developed telemetry-aware drone intrusion detection that combines flight telemetry, camera projection, and geofencing with a temporal state machine, and exports structured analytics."
+        },
+        {
+          "id": "exp1b3",
+          "text": "Cut false positives and flicker with physical-size filters, calibrated thresholds, and track smoothing; added automated unit tests."
+        },
+        {
+          "id": "exp1b4",
+          "text": "Built explainable anomaly and suspicious-object detection for aerial video, plus maritime vessel detection and tracking, using rule-based reasoning on top of detector outputs."
+        },
+        {
+          "id": "exp1b5",
+          "text": "Built Docker-deployed web dashboards for multi-feed drone surveillance and incident reporting; benchmarked models and documented results for the team."
+        }
+      ]
+    },
+    {
+      "company": "Synbrains Solutions Pvt Ltd",
+      "role": "AI/ML Intern",
+      "location": "Kochi, India",
+      "start_date": "Mar 2026",
+      "end_date": "May 2026",
+      "bullets": [
+        {
+          "id": "exp2b1",
+          "text": "Built an automated report-extraction pipeline from specification documents with no prior codebase, using Pydantic data contracts and regex-based parsing to convert raw PDF/DOCX medical reports into validated ReportDraft schemas."
+        },
+        {
+          "id": "exp2b2",
+          "text": "Contributed to a clinical AI reporting platform (PI-RADS) with FastAPI backend integration, scoring, image-handling, and sector-mapping modules."
+        },
+        {
+          "id": "exp2b3",
+          "text": "Worked in Git branching workflows for collaborative feature development across the team."
+        }
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "id": "p1",
+      "name": "AI-Powered E-Commerce Storefront & Catalog Generation Agent",
+      "technologies": ["Python", "FastAPI", "Agentic AI", "LLMs", "Vision-Language Models", "Pydantic"],
+      "description": "Agentic platform converting natural-language prompts and product images into full e-commerce storefronts and structured catalogs.",
+      "bullets": [
+        {
+          "id": "p1b1",
+          "text": "Built an agentic platform that converts natural-language prompts into complete e-commerce storefronts, autonomously generating branding, category hierarchy, landing pages, and website content."
+        },
+        {
+          "id": "p1b2",
+          "text": "Built a multimodal pipeline using VLMs and LLMs to extract product information from images and generate structured catalogs with titles, descriptions, specifications, categories, and SEO metadata."
+        }
+      ],
+      "link": "https://github.com/Aswinpt2004"
+    },
+    {
+      "id": "p2",
+      "name": "KuTo: Kerala-First Managed Booking Marketplace",
+      "technologies": ["Next.js", "React", "TypeScript", "Tailwind CSS", "Gemini API"],
+      "description": "Managed travel booking marketplace for Kerala experiences, stays, and transport.",
+      "bullets": [
+        {
+          "id": "p2b1",
+          "text": "Built a managed booking marketplace for Kerala covering guides, stays, transport, and experiences; customers can book one service or ask an organiser to arrange a visit."
+        },
+        {
+          "id": "p2b2",
+          "text": "Modelled every booking with a responsible provider, accepted terms, payment records, and a support route; combined visits have a lead organiser and separately recorded components."
+        }
+      ],
+      "link": "https://codedbyaswinpt.vercel.app/"
+    },
+    {
+      "id": "p3",
+      "name": "Manglish WhatsApp Chatbot (RAG with Llama-3 / Ollama)",
+      "technologies": ["Node.js", "Python", "Llama-3", "Ollama", "RAG", "Hybrid AI"],
+      "description": "Offline regional-language assistant grounding local Llama-3 inference via RAG.",
+      "bullets": [
+        {
+          "id": "p3b1",
+          "text": "Built an offline Malayalam-English chatbot using retrieval-augmented generation (RAG): similarity-based retrieval of relevant knowledge and responses grounds local Llama-3 inference, so answers stay relevant without any cloud API."
+        },
+        {
+          "id": "p3b2",
+          "text": "Combined rule-based intent analysis with retrieval and LLM generation in a hybrid design for real-time regional-language messaging."
+        }
+      ],
+      "link": "https://github.com/Aswinpt2004"
+    },
+    {
+      "id": "p4",
+      "name": "FedGraph-Shield: Hierarchical Federated Graph Learning for Financial Fraud Detection",
+      "technologies": ["PyTorch", "Flower", "Graph Neural Networks", "Differential Privacy"],
+      "description": "Privacy-preserving fraud detection framework across distributed banking networks.",
+      "bullets": [
+        {
+          "id": "p4b1",
+          "text": "Designed a hierarchical federated graph learning framework allowing distributed banking institutions to collaboratively train a fraud detection model without sharing raw transaction data."
+        },
+        {
+          "id": "p4b2",
+          "text": "Modelled financial transactions as directed heterogeneous graphs (customers, merchants, and devices as nodes; payments as edges), enabling detection of ring structures and circular payment chains invisible to tabular approaches."
+        },
+        {
+          "id": "p4b3",
+          "text": "Coordinated federated aggregation via the Flower framework using a two-tier hierarchical FedAvg strategy with differential privacy composition for formal privacy accounting across communication rounds."
+        }
+      ],
+      "link": "https://github.com/Aswinpt2004"
+    },
+    {
+      "id": "p5",
+      "name": "Adaptive Confidence Modeling for SHADER-Based 3D Human Body Shape Estimation",
+      "technologies": ["Python", "PyTorch", "OpenCV", "SMPL"],
+      "description": "Dynamic confidence modeling framework improving 3D human shape reconstruction accuracy.",
+      "bullets": [
+        {
+          "id": "p5b1",
+          "text": "Introduced a dynamic, image-driven confidence model replacing the original global-sigma formulation in the SHADER monocular 3D shape estimation pipeline for loose-clothing scenarios."
+        },
+        {
+          "id": "p5b2",
+          "text": "Achieved 20–25% lower confidence-prediction error on 9,656 dressed-human images, producing more stable SMPL estimation without additional data or architectural changes."
+        }
+      ],
+      "link": "https://github.com/Aswinpt2004"
+    },
+    {
+      "id": "p6",
+      "name": "Dynamic Connectome Prediction of Reality Monitoring Failure Under Sleep Deprivation",
+      "technologies": ["Python", "PyTorch", "fMRI Preprocessing", "Graph Attention Networks"],
+      "description": "Neuroimaging connectome framework predicting cognitive monitoring failure from resting-state fMRI.",
+      "bullets": [
+        {
+          "id": "p6b1",
+          "text": "Designing a dynamic connectome framework using resting-state fMRI to predict reality monitoring failure before overt behavioural symptoms appear with applications to psychosis-risk and fatigue research."
+        },
+        {
+          "id": "p6b2",
+          "text": "Employing Graph Attention Networks (GATs) to identify informative prefrontal sensory connections associated with sleep-deprivation-induced network instability (currently at the preprocessing and parcellation stage)."
+        }
+      ],
+      "link": "https://github.com/Aswinpt2004"
+    },
+    {
+      "id": "p7",
+      "name": "PETZZO: Comprehensive Pet Care Platform",
+      "technologies": ["Django", "HTML", "CSS", "JavaScript", "MySQL"],
+      "description": "Full-stack pet healthcare and service marketplace platform.",
+      "bullets": [
+        {
+          "id": "p7b1",
+          "text": "Built a full-stack platform connecting pet owners with verified hospitals, veterinarians, and pet shops, featuring AI-driven disease prediction, real-time pet tracking, and appointment booking."
+        },
+        {
+          "id": "p7b2",
+          "text": "Implemented pet health record and vaccination management, pet adoption workflows, and streamlined pet shop operations within a single integrated system."
+        }
+      ],
+      "link": "https://github.com/Aswinpt2004"
+    }
+  ],
+  "education": [
+    {
+      "institution": "Kerala University of Digital Sciences, Innovation and Technology",
+      "degree": "M.Sc. Computer Science",
+      "field_of_study": "Machine Intelligence",
+      "graduation_year": "2026",
+      "location": "Thiruvananthapuram, India",
+      "gpa": ""
+    },
+    {
+      "institution": "College of Applied Science IHRD",
+      "degree": "B.Sc. Computer Science",
+      "field_of_study": "Computer Science",
+      "graduation_year": "2024",
+      "location": "Kozhikode, India",
+      "gpa": ""
+    }
+  ],
+  "certifications": []
+}

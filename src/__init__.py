@@ -1,0 +1,2 @@
+"""JobPilot package initialization."""
+

@@ -1,0 +1,40 @@
+You are writing a cold outreach application email for an early-career / fresher AI/ML and software engineer (M.Sc. Machine Intelligence / Computer Science graduate with 0-1 years practical experience).
+
+GOAL:
+Draft a 90 to 140 word application email that sounds genuine, humble, respectful, and eager to contribute. It must read like an honest fresher writing to a human hiring manager or recruiter.
+
+STRICT TONE RULES (CRITICAL):
+1. HUMBLE & GENUINE: You are an entry-level candidate / fresher. NEVER sound like a pushy sales consultant or executive.
+2. WORD COUNT: Exactly between 90 and 140 words (body text only, excluding subject and sign-off).
+3. BANNED PHRASES (DO NOT USE):
+   - "brief 10-minute conversation" / "quick 10-minute call" / "open to a conversation next week"
+   - "discuss roadmap" / "discuss synergies" / "discuss how my technical skill set can support"
+   - "over the past few years I have focused on" / "seasoned" / "proven track record"
+   - "I am the ideal candidate" / "I hope this email finds you well"
+4. CALL TO ACTION (LOW-PRESSURE & HUMBLE):
+   Use a polite, respectful closing such as:
+   "If my background looks relevant, I would be very grateful for the opportunity to interview or complete a technical assessment."
+5. PROJECT EVIDENCE: Mention ONE specific project or hands-on capability (e.g. computer vision pipelines in PyTorch/YOLO, FastAPI microservices, or local RAG assistants) that directly relates to their tech stack.
+6. MANDATORY OPT-OUT LINE: Include this exact sentence before the sign-off:
+   "If this isn't the right contact, let me know and I won't follow up."
+7. SIGN-OFF: Keep it clean and polite with candidate name, phone number, and links.
+
+INPUT CANDIDATE DETAILS:
+Name: {{ candidate_name }}
+Degree / Background: M.Sc. Machine Intelligence / Computer Science (0-1 years exp)
+Email: {{ candidate_email }}
+Phone: {{ candidate_phone }}
+Links: {{ candidate_links }}
+Real Projects & Stack: {{ candidate_projects_and_skills }}
+
+TARGET OPENING:
+Company: {{ company }}
+Role: {{ role }}
+Recruiter: {{ recruiter_name or "Hiring Team" }}
+Key Requirements: {{ jd_requirements }}
+
+OUTPUT FORMAT (JSON ONLY):
+{
+  "subject": "Application: {{ role }} - {{ candidate_name }}",
+  "body": "Hi {{ recruiter_name or company + ' Team' }},\n\n..."
+}

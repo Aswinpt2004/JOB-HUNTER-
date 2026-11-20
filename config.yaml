@@ -1,0 +1,221 @@
+user_profile:
+  name: "Aswin P T"
+  email: "aswinpt2004@gmail.com"
+  phone: "+91 88913 81713"
+  location: "Thiruvananthapuram, Kerala, India"
+  target_roles:
+    - "AI/ML Engineer"
+    - "Computer Vision Engineer"
+    - "LLM Application Engineer"
+    - "Python Developer"
+    - "Junior Machine Learning Engineer"
+    - "Backend Engineer"
+  experience_level: "fresher / under 1 year experience (0-1 years)"
+  preferred_locations:
+    - "Bangalore"
+    - "Bengaluru"
+    - "Kochi"
+    - "Cochin"
+    - "Thiruvananthapuram"
+    - "Trivandrum"
+    - "TVM"
+    - "Kozhikode"
+    - "Calicut"
+    - "KKD"
+    - "Remote India"
+
+search_filters:
+  keywords:
+    - "python"
+    - "machine learning"
+    - "deep learning"
+    - "computer vision"
+    - "pytorch"
+    - "tensorflow"
+    - "fastapi"
+    - "opencv"
+    - "yolo"
+    - "llm"
+    - "rag"
+    - "nlp"
+    - "backend engineer"
+    - "software engineer"
+    - "data science"
+    - "ai engineer"
+    - "ml engineer"
+  excluded_locations:
+    - "US-Remote"
+    - "Remote US"
+    - "Remote in the US"
+    - "Remote - US"
+    - "Remote (US)"
+    - "Remote UK"
+    - "Remote Europe"
+    - "United States"
+    - "London"
+    - "San Francisco"
+    - "Seattle"
+    - "Berlin"
+    - "Singapore"
+  min_match_score: 65
+
+llm_limits:
+  max_requests_per_day: 250
+  max_tokens_per_day: 350000
+  min_seconds_between_calls: 4.0
+  max_input_characters: 3000
+
+scrapers:
+  request_delay_min_seconds: 2
+  request_delay_max_seconds: 5
+  user_agent: "JobPilot/1.0 (+https://github.com/jobpilot/bot; candidate job finder)"
+  greenhouse_boards:
+    - "inmobi"
+    - "groww"
+    - "thoughtworks"
+    - "canonical"
+    - "gitlab"
+    - "slice"
+  lever_boards:
+    - "meesho"
+    - "palantir"
+    - "cred"
+  remotive_categories:
+    - "software-dev"
+    - "data"
+  career_pages:
+    - url: "https://www.qburst.com/en-in/careers/"
+      company: "QBurst"
+    - url: "https://accubits.com/careers/"
+      company: "Accubits"
+    - url: "https://carestack.com/careers"
+      company: "CareStack"
+    - url: "https://zerodha.tech/careers"
+      company: "Zerodha"
+
+sending:
+  auto_send: false
+  daily_cap: 15
+  delay_min_seconds: 60
+  delay_max_seconds: 180
+  sending_hours_start: 9
+  sending_hours_end: 18
+  cooldown_days_per_company: 30
+  followup_days: 6
+
+paths:
+  db_path: "data/jobpilot.db"
+  master_resume_path: "data/master_resume.json"
+  resume_output_dir: "output/resumes"
+  templates_dir: "templates"
+
+resume_style:
+  font_family: "Times-Roman"
+  font_family_bold: "Times-Bold"
+  font_size_name: 18.0
+  font_size_headline: 13.4
+  font_size_headings: 12.0
+  font_size_body: 10.0
+  font_size_min: 9.0
+  font_size_max: 10.5
+  line_height: 1.35
+  line_height_pt: 13.51
+  margins_pt:
+    top: 40.0
+    bottom: 20.0
+    left: 54.0
+    right: 40.0
+  spacing_pt:
+    before_heading: 8.5
+    after_heading: 8.5
+    between_projects: 16.0
+    between_experiences: 17.0
+    title_to_stack: 3.5
+  bullet_indent_pt: 13.0
+  text_hanging_indent_pt: 9.5
+  target_page_fill:
+    min: 0.93
+    max: 1.00
+
+company_discovery:
+  min_employees: 20
+  preferred_employees: 50
+  enabled_sources:
+    kerala_parks: true
+    ats_boards: true
+    github_orgs: true
+    search_queries: true
+    seed_list: true
+  seed_companies:
+    - name: "QBurst"
+      domain: "qburst.com"
+      city: "Thiruvananthapuram"
+      website: "https://www.qburst.com"
+      careers_url: "https://www.qburst.com/en-in/careers/"
+      field_tags: ["machine_learning", "data_science", "backend"]
+    - name: "Accubits Technologies"
+      domain: "accubits.com"
+      city: "Thiruvananthapuram"
+      website: "https://accubits.com"
+      careers_url: "https://accubits.com/careers/"
+      field_tags: ["generative_ai", "llm", "computer_vision"]
+    - name: "CareStack"
+      domain: "carestack.com"
+      city: "Thiruvananthapuram"
+      website: "https://carestack.com"
+      careers_url: "https://carestack.com/careers"
+      field_tags: ["healthcare_ai", "backend", "cloud"]
+    - name: "Speridian Technologies"
+      domain: "speridian.com"
+      city: "Thiruvananthapuram"
+      website: "https://www.speridian.com"
+      careers_url: "https://www.speridian.com/careers/"
+      field_tags: ["ai_solutions", "data_engineering"]
+    - name: "SurveySparrow"
+      domain: "surveysparrow.com"
+      city: "Kochi"
+      website: "https://surveysparrow.com"
+      careers_url: "https://surveysparrow.com/careers/"
+      field_tags: ["generative_ai", "nlp", "saas"]
+    - name: "Sinergia Media Labs"
+      domain: "simelabs.com"
+      city: "Kochi"
+      website: "https://simelabs.com"
+      careers_url: "https://simelabs.com/careers/"
+      field_tags: ["computer_vision", "ai_ml", "iot"]
+    - name: "NuCore Software Systems"
+      domain: "nu-core.com"
+      city: "Kozhikode"
+      website: "https://nu-core.com"
+      careers_url: "https://nu-core.com/careers/"
+      field_tags: ["data_analytics", "backend"]
+    - name: "Infinite Open Source Solutions"
+      domain: "ioss.in"
+      city: "Kozhikode"
+      website: "https://ioss.in"
+      careers_url: "https://ioss.in/careers/"
+      field_tags: ["ai_software", "machine_learning"]
+    - name: "InMobi"
+      domain: "inmobi.com"
+      city: "Bangalore"
+      website: "https://www.inmobi.com"
+      careers_url: "https://www.inmobi.com/company/careers"
+      field_tags: ["machine_learning", "adtech_ai", "deep_learning"]
+    - name: "CropIn Technology"
+      domain: "cropin.com"
+      city: "Bangalore"
+      website: "https://cropin.com"
+      careers_url: "https://cropin.com/careers"
+      field_tags: ["computer_vision", "remote_sensing", "satellite_ai"]
+    - name: "Tonbo Imaging"
+      domain: "tonboimaging.com"
+      city: "Bangalore"
+      website: "https://tonboimaging.com"
+      careers_url: "https://tonboimaging.com/careers/"
+      field_tags: ["computer_vision", "surveillance", "thermal_imaging", "video_analytics"]
+    - name: "Aero360"
+      domain: "aero360.co.in"
+      city: "Bangalore"
+      website: "https://aero360.co.in"
+      careers_url: "https://aero360.co.in/careers"
+      field_tags: ["drone", "uav", "computer_vision", "surveillance"]
