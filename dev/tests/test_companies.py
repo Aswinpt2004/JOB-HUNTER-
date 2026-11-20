@@ -307,6 +307,10 @@ def test_draft_single_speculative_application_and_verifier_order(test_db_path, s
     )
     cid = save_company(comp, db_path=test_db_path)
 
+    from src.models import RecruiterContact
+    from src.db import save_company_contact
+    save_company_contact(cid, RecruiterContact(job_id="", company_id=cid, email="careers@testrobotics.ai", verified=True, domain_mx_valid=True), db_path=test_db_path)
+
     # Monkeypatch settings.db_path to test_db_path
     from src.config import Config
     monkeypatch.setattr(Config, "db_path", property(lambda self: test_db_path))

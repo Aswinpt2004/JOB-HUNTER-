@@ -46,7 +46,6 @@ class SendWorker:
         self._last_activity: Optional[str] = None
         self._total_sent = 0
         self._total_failed = 0
-        self._dry_run = False
         self._ignore_hours = False
 
     @classmethod
@@ -56,10 +55,9 @@ class SendWorker:
                 cls._instance = SendWorker()
             return cls._instance
 
-    def start(self, dry_run: bool = False, ignore_hours: bool = False) -> None:
+    def start(self, ignore_hours: bool = False) -> None:
         """Starts the background worker thread if not already active."""
         with self._lock:
-            self._dry_run = dry_run
             self._ignore_hours = ignore_hours
             if self._thread is not None and self._thread.is_alive():
                 logger.info("SendWorker thread is already running.")
@@ -70,8 +68,8 @@ class SendWorker:
             self._thread = threading.Thread(target=self._worker_loop, daemon=True, name="JobPilotSendWorker")
             self._thread.start()
             self._is_running = True
-            logger.info("SendWorker background thread started (dry_run=%s, ignore_hours=%s).", dry_run, ignore_hours)
-            log_event("send_worker", f"Started background send worker (dry_run={dry_run}, ignore_hours={ignore_hours})")
+            logger.info("SendWorker background thread started (ignore_hours=%s).", ignore_hours)
+            log_event("send_worker", f"Started background send worker (ignore_hours={ignore_hours})")
 
     def stop(self) -> None:
         """Signals the background worker thread to stop."""
@@ -103,7 +101,6 @@ class SendWorker:
             "queued_applications": queued_apps,
             "queued_outreach": queued_outreach,
             "sending_count": sending_apps + sending_outreach,
-            "dry_run": self._dry_run,
             "ignore_hours": self._ignore_hours
         }
 
@@ -159,17 +156,15 @@ class SendWorker:
                 body=body,
                 pdf_attachment_path=pdf_path,
                 company_name=company,
-                dry_run=self._dry_run,
                 ignore_hours=self._ignore_hours
             )
 
             if ok:
                 self._total_sent += 1
                 self._last_activity = f"Sent to {mask_email(recip)} at {company}: {msg}"
-                if not self._dry_run:
-                    pacing = random.uniform(settings.send_delay_min, settings.send_delay_max)
-                    self._current_task = f"Pacing cooldown: sleeping {pacing:.1f}s before next send..."
-                    time.sleep(pacing)
+                pacing = random.uniform(settings.send_delay_min, settings.send_delay_max)
+                self._current_task = f"Pacing cooldown: sleeping {pacing:.1f}s before next send..."
+                time.sleep(pacing)
             else:
                 self._total_failed += 1
                 self._last_activity = f"Failed for {company}: {msg}"
@@ -189,17 +184,15 @@ class SendWorker:
 
             ok, msg = send_company_outreach_email(
                 outreach_id=oid,
-                dry_run=self._dry_run,
                 ignore_hours=self._ignore_hours
             )
 
             if ok:
                 self._total_sent += 1
                 self._last_activity = f"Sent speculative email to {mask_email(recip)} at {cname}."
-                if not self._dry_run:
-                    pacing = random.uniform(settings.send_delay_min, settings.send_delay_max)
-                    self._current_task = f"Pacing cooldown: sleeping {pacing:.1f}s before next send..."
-                    time.sleep(pacing)
+                pacing = random.uniform(settings.send_delay_min, settings.send_delay_max)
+                self._current_task = f"Pacing cooldown: sleeping {pacing:.1f}s before next send..."
+                time.sleep(pacing)
             else:
                 self._total_failed += 1
                 self._last_activity = f"Failed speculative outreach #{oid} for {cname}: {msg}"
@@ -234,9 +227,9 @@ def get_send_worker() -> SendWorker:
     return SendWorker.get_instance()
 
 
-def trigger_send_worker(dry_run: bool = False, ignore_hours: bool = False) -> None:
+def trigger_send_worker(ignore_hours: bool = False) -> None:
     worker = get_send_worker()
-    worker.start(dry_run=dry_run, ignore_hours=ignore_hours)
+    worker.start(ignore_hours=ignore_hours)
     worker.trigger()
 
 
@@ -248,17 +241,15 @@ def run_standalone_worker():
     """Runs the sender worker in a foreground loop for CLI usage."""
     import argparse
     parser = argparse.ArgumentParser(description="JobPilot Standalone Background Send Worker")
-    parser.add_argument("--dry-run", action="store_true", help="Simulate sends without dispatching SMTP packets")
     parser.add_argument("--ignore-hours", action="store_true", help="Bypass the 09:00 - 18:00 IST sending window")
     args = parser.parse_args()
 
     print("=== JobPilot Background Send Worker Started ===")
-    print(f"Mode: {'DRY-RUN' if args.dry_run else 'LIVE'}")
     print(f"Ignore Hours: {args.ignore_hours}")
     print("Press Ctrl+C to terminate.")
 
     worker = get_send_worker()
-    worker.start(dry_run=args.dry_run, ignore_hours=args.ignore_hours)
+    worker.start(ignore_hours=args.ignore_hours)
 
     try:
         while True:

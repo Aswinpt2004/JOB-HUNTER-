@@ -23,13 +23,14 @@ def test_cache_avoids_llm_call(monkeypatch):
     assert res == "Cached response value"
 
 
-def test_quota_guard_fallback(monkeypatch):
+def test_quota_guard_fail_fast(monkeypatch):
+    import pytest
     from src.config import settings, Config
     # Set limit to 0 requests
     monkeypatch.setattr(Config, "llm_max_requests_per_day", property(lambda self: 0))
 
-    # Any non-cached call should hit quota guard and return fallback without crashing
-    res = generate("Brand new un-cached prompt that triggers quota guard", json_mode=False)
-    assert res is not None
-    assert "fallback" in res.lower() or "candidate" in res.lower() or "hiring" in res.lower()
+    # Any non-cached call should hit quota guard and raise RuntimeError (fail-fast)
+    with pytest.raises(RuntimeError) as exc_info:
+        generate("Brand new un-cached prompt that triggers quota guard", json_mode=False)
+    assert "QUOTA GUARD" in str(exc_info.value)
 

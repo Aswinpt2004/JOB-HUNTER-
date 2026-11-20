@@ -1389,7 +1389,7 @@ def save_company_contact(company_id: int, contact: RecruiterContact, db_path: Op
             if j_row:
                 job_id = j_row["id"]
             else:
-                # Create a placeholder company inquiry record in jobs
+                # Create an inquiry profile record in jobs for relational linkage
                 cursor.execute("SELECT name, website, city FROM companies WHERE id = ?", (company_id,))
                 c_row = cursor.fetchone()
                 cname = c_row["name"] if c_row else f"Company_{company_id}"

@@ -84,7 +84,7 @@ def generate_pseudo_jd(company: Dict[str, Any]) -> Tuple[Job, str]:
         company=cname,
         title=f"AI/ML Engineer ({dominant_lens.split('/')[0].strip()})",
         location=f"{city}, India",
-        url=company.get("careers_url") or company.get("website") or f"https://{company.get('domain') or 'example.com'}",
+        url=company.get("careers_url") or company.get("website") or (f"https://{company['domain']}" if company.get("domain") else ""),
         description=synthetic_desc,
         source="speculative_engine",
         role_lens=dominant_lens,
@@ -163,19 +163,23 @@ def draft_single_speculative_application(company_id: int, master: MasterResume) 
     if not company:
         return None
 
-    # Check eligibility: Tier A or B, size >= 20 confirmed or likely, not excluded
+    # Check eligibility: Tier A or B, not under 20, not excluded
     tier = company.get("tier")
     size_st = company.get("size_status")
     if tier not in ("A", "B"):
         logger.info("Company '%s' is Tier %s; skipping speculative draft.", company["name"], tier)
         return None
 
-    if size_st not in ("confirmed_20plus", "likely_20plus"):
-        logger.info("Company '%s' size status is '%s'; needs manual verification first.", company["name"], size_st)
+    if size_st == "under_20":
+        logger.info("Company '%s' is under 20 employees; skipping speculative draft.", company["name"])
         return None
 
-    # Get contacts
+    # Get contacts and enforce require_contact_email
     contacts = get_company_contacts(company_id)
+    if settings.require_contact_email and not contacts:
+        logger.info("Company '%s' has NO contact email in DB (require_contact_email=True); rejecting draft.", company["name"])
+        return None
+
     top_contact = None
     contact_id = None
     if contacts:
@@ -216,7 +220,9 @@ def draft_single_speculative_application(company_id: int, master: MasterResume) 
     # 3. Draft Speculative cold outreach email
     subject, body, tone_report = generate_speculative_email(company, top_contact, dominant_lens)
 
-    # 4. Save to company_outreach table
+    # 4. Save to company_outreach table (mark 'needs_review' if size unknown until confirmed)
+    outreach_status = "needs_review" if size_st == "unknown" else "drafted"
+
     outreach = CompanyOutreach(
         company_id=company_id,
         contact_id=contact_id,
@@ -224,7 +230,7 @@ def draft_single_speculative_application(company_id: int, master: MasterResume) 
         resume_path=str(pdf_path),
         email_subject=subject,
         email_body=body,
-        status="drafted"
+        status=outreach_status
     )
 
     outreach_id = save_company_outreach(outreach)
@@ -268,7 +274,7 @@ def run_company_drafting(limit: Optional[int] = None) -> Dict[str, Any]:
             skipped_existing += 1
             continue
 
-        if c.get("size_status") not in ("confirmed_20plus", "likely_20plus"):
+        if c.get("size_status") == "under_20":
             skipped_unverified_size += 1
             continue
 

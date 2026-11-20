@@ -89,7 +89,6 @@ def test_smtp_mocked_success(temp_db, monkeypatch):
             subject="Application for AI Engineer",
             body="Dear Hiring Manager...",
             company_name="NovaTech",
-            dry_run=False,
             ignore_hours=True
         )
 
@@ -130,7 +129,6 @@ def test_smtp_auth_failure_535_halts_immediately(temp_db, monkeypatch):
             subject="Application",
             body="Body",
             company_name="VisionCorp",
-            dry_run=False,
             ignore_hours=True
         )
 
@@ -168,7 +166,6 @@ def test_smtp_transient_timeout_exhausts_retries(temp_db, monkeypatch):
             subject="Application",
             body="Body",
             company_name="PromptCo",
-            dry_run=False,
             ignore_hours=True
         )
 
@@ -215,7 +212,6 @@ def test_smtp_transient_recovers_on_retry(temp_db, monkeypatch):
             subject="Application",
             body="Body",
             company_name="EdgeScale",
-            dry_run=False,
             ignore_hours=True
         )
 
@@ -254,10 +250,10 @@ def test_send_diagnose_report_generation(temp_db):
     assert "# 🩺 JobPilot Email Sending Diagnostic Report" in report
     assert "Credentials Checklist" in report
     assert "SMTP Connectivity & Login Tests" in report
-    assert "Forensic Code Audit" in report
+    assert "Pipeline State: Application Audit" in report
 
 
-def test_send_worker_processes_approved_dry_run(temp_db, monkeypatch):
+def test_send_worker_processes_approved(temp_db, monkeypatch):
     from src.models import RecruiterContact
     from src.db import save_contact
 
@@ -269,26 +265,33 @@ def test_send_worker_processes_approved_dry_run(temp_db, monkeypatch):
     # Avoid real 60s sleeps in test
     monkeypatch.setattr("time.sleep", lambda s: None)
 
-    # Instantiate worker directly
-    worker = SendWorker()
-    worker._dry_run = True
-    worker._ignore_hours = True
+    # Mock smtplib.SMTP_SSL
+    mock_server = MagicMock()
+    mock_server.login.return_value = (235, b"2.7.0 Accepted")
+    mock_server.send_message.return_value = {}
 
-    # Process 1 iteration of worker logic directly
-    apps = list_applications_by_status("approved", db_path=temp_db)
-    assert len(apps) == 1
+    with patch("smtplib.SMTP_SSL") as mock_smtp_cls:
+        mock_smtp_cls.return_value.__enter__.return_value = mock_server
 
-    # Call worker's application handler
-    processed = worker.process_next_item()
-    assert processed is True
+        # Instantiate worker directly
+        worker = SendWorker()
+        worker._ignore_hours = True
 
-    # Status in dry_run remains 'approved' with honest simulation response
-    with get_connection(temp_db) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT status, smtp_response, attempted_at FROM applications WHERE job_id = ?", (j.id,))
-        row = dict(cursor.fetchone())
+        # Process 1 iteration of worker logic directly
+        apps = list_applications_by_status("approved", db_path=temp_db)
+        assert len(apps) == 1
 
-    assert row["status"] == "approved"
-    assert row["smtp_response"] == "DRY_RUN_SIMULATION"
-    assert worker._total_sent == 1
+        # Call worker's application handler
+        processed = worker.process_next_item()
+        assert processed is True
+
+        # Status in live mode transitions to 'sent'
+        with get_connection(temp_db) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT status, sent_at FROM applications WHERE job_id = ?", (j.id,))
+            row = dict(cursor.fetchone())
+
+        assert row["status"] == "sent"
+        assert row["sent_at"] is not None
+        assert worker._total_sent == 1
 

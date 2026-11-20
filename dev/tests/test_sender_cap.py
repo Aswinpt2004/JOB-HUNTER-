@@ -33,7 +33,6 @@ def test_blocklist_stops_sending(temp_db):
         subject="Hello",
         body="Body",
         company_name="TestCorp",
-        dry_run=True,
         ignore_hours=True
     )
     assert ok is False
@@ -61,7 +60,6 @@ def test_daily_cap_enforcement(temp_db, monkeypatch):
         subject="Hello",
         body="Body",
         company_name="NewCompany",
-        dry_run=True,
         ignore_hours=True
     )
     assert ok is False
@@ -111,7 +109,14 @@ def test_send_company_outreach_email_dry_run_and_cooldown(temp_db):
     )
     oid = save_company_outreach(outreach, db_path=temp_db)
 
-    # Test dry-run dispatch
-    ok, msg = send_company_outreach_email(outreach_id=oid, dry_run=True, ignore_hours=True)
-    assert ok is True
-    assert "[DRY-RUN]" in msg
+    # Test dispatch with mocked SMTP
+    from unittest.mock import patch, MagicMock
+    mock_server = MagicMock()
+    mock_server.login.return_value = (235, b"2.7.0 Accepted")
+    mock_server.send_message.return_value = {}
+
+    with patch("smtplib.SMTP_SSL") as mock_ssl:
+        mock_ssl.return_value.__enter__.return_value = mock_server
+        ok, msg = send_company_outreach_email(outreach_id=oid, ignore_hours=True)
+        assert ok is True
+        assert "sent successfully to" in msg.lower()

@@ -60,7 +60,7 @@ def load_master_resume() -> MasterResume:
     return MasterResume.model_validate(data)
 
 
-def step_scrape(dry_run: bool = False) -> int:
+def step_scrape() -> int:
     """Discovers new job postings across Greenhouse, Lever, Remotive, and Career pages."""
     init_db()
     logger.info("=== Starting Job Discovery Scrapers ===")
@@ -78,23 +78,19 @@ def step_scrape(dry_run: bool = False) -> int:
         try:
             jobs = scraper.fetch_jobs()
             for job in jobs:
-                if dry_run:
-                    logger.info("[DRY-RUN] Scraped: %s at %s (%s)", job.title, job.company, job.url)
+                inserted = save_job(job)
+                if inserted:
                     total_new += 1
-                else:
-                    inserted = save_job(job)
-                    if inserted:
-                        total_new += 1
-                        logger.info("Saved new job: %s at %s", job.title, job.company)
+                    logger.info("Saved new job: %s at %s", job.title, job.company)
         except Exception as e:
             logger.error("Scraper '%s' encountered error: %s", scraper.source_name, e)
 
     logger.info("Job discovery completed. %d new jobs saved.", total_new)
-    log_event("pipeline", f"Scraped {total_new} new jobs (dry_run={dry_run})")
+    log_event("pipeline", f"Scraped {total_new} new jobs")
     return total_new
 
 
-def step_match(threshold: Optional[float] = None, limit: Optional[int] = 10, dry_run: bool = False) -> int:
+def step_match(threshold: Optional[float] = None, limit: Optional[int] = 10) -> int:
     """Parses new JDs and computes match score against master resume."""
     init_db()
     min_score = threshold if threshold is not None else settings.min_match_score
@@ -131,8 +127,7 @@ def step_match(threshold: Optional[float] = None, limit: Optional[int] = 10, dry
             # 1. Location check: strictly Bangalore, Kochi, TVM, KKD, Remote India
             loc = job_data.get("location") or ""
             if not BaseScraper.matches_preferred_location(loc):
-                if not dry_run:
-                    update_application(job_id=job_id, status="skipped", match_score=0.0)
+                update_application(job_id=job_id, status="skipped", match_score=0.0)
                 continue
 
             # 2. Fast check: Disqualify Senior / Lead / Manager / Multi-year roles without wasting LLM tokens
@@ -141,16 +136,14 @@ def step_match(threshold: Optional[float] = None, limit: Optional[int] = 10, dry
             is_senior = any(sk in title_lower for sk in senior_kw) and not any(ok in title_lower for ok in ["junior", "intern", "associate", "trainee"])
             if is_senior:
                 logger.info("Job '%s' title indicates senior/lead tier. Skipping without LLM call.", job_data["title"])
-                if not dry_run:
-                    update_application(job_id=job_id, status="skipped", match_score=0.0)
+                update_application(job_id=job_id, status="skipped", match_score=0.0)
                 continue
 
             # 3. Pre-screen: check if title or description matches any technical keyword
             check_text = f"{job_data['title']} {job_data['description']}".lower()
             if settings.keywords and not any(kw.lower() in check_text for kw in settings.keywords):
                 logger.info("Job '%s' has 0 matching technical keywords. Skipping without LLM call.", job_data["title"])
-                if not dry_run:
-                    update_application(job_id=job_id, status="skipped", match_score=0.0)
+                update_application(job_id=job_id, status="skipped", match_score=0.0)
                 continue
 
             evaluated_count += 1
@@ -171,31 +164,25 @@ def step_match(threshold: Optional[float] = None, limit: Optional[int] = 10, dry
             # USER PREFERENCE: Avoid any listing that lacks a verified HR contact email for outreach
             if not contacts:
                 logger.info("Job '%s' at %s has NO verified HR contact email. Avoiding listing for mailing.", job_data["title"], job_data["company"])
-                if not dry_run:
-                    update_application(
-                        job_id=job_id,
-                        status="skipped",
-                        match_score=match_res.match_score,
-                        rationale="Skipped: No verified HR / recruiter contact email available for outreach"
-                    )
-                continue
-
-            if not dry_run:
-                next_status = "matched" if match_res.meets_threshold else "skipped"
                 update_application(
                     job_id=job_id,
-                    status=next_status,
+                    status="skipped",
                     match_score=match_res.match_score,
-                    rationale=match_res.rationale,
-                    role_tier=match_res.role_tier,
-                    role_lens=match_res.role_lens
+                    rationale="Skipped: No verified HR / recruiter contact email available for outreach"
                 )
-                if match_res.meets_threshold:
-                    matched_count += 1
-            else:
-                if match_res.meets_threshold:
-                    matched_count += 1
-                logger.info("[DRY-RUN] Qualified for mailing with HR contact! Would set status=%s, match_score=%.1f (Tier: %s, Lens: %s)", "matched" if match_res.meets_threshold else "skipped", match_res.match_score, match_res.role_tier, match_res.role_lens)
+                continue
+
+            next_status = "matched" if match_res.meets_threshold else "skipped"
+            update_application(
+                job_id=job_id,
+                status=next_status,
+                match_score=match_res.match_score,
+                rationale=match_res.rationale,
+                role_tier=match_res.role_tier,
+                role_lens=match_res.role_lens
+            )
+            if match_res.meets_threshold:
+                matched_count += 1
 
         except Exception as e:
             logger.error("Error evaluating job %s: %s", job_id, e)
@@ -205,7 +192,7 @@ def step_match(threshold: Optional[float] = None, limit: Optional[int] = 10, dry
     return matched_count
 
 
-def step_draft(limit: Optional[int] = 10, dry_run: bool = False) -> int:
+def step_draft(limit: Optional[int] = 10) -> int:
     """Tailors ATS resume, compiles PDF, and generates personalized application email drafts."""
     init_db()
     master = load_master_resume()
@@ -241,12 +228,11 @@ def step_draft(limit: Optional[int] = 10, dry_run: bool = False) -> int:
             contacts = get_contacts_for_job(job_id)
             if not contacts:
                 logger.info("Application for job %s has no verified HR email. Skipping drafting per user preference.", job_id)
-                if not dry_run:
-                    update_application(
-                        job_id=job_id,
-                        status="skipped",
-                        rationale="Skipped: No verified HR contact email for outreach"
-                    )
+                update_application(
+                    job_id=job_id,
+                    status="skipped",
+                    rationale="Skipped: No verified HR contact email for outreach"
+                )
                 continue
 
             recruiter_name = contacts[0]["name"] if contacts and contacts[0].get("name") else None
@@ -260,25 +246,20 @@ def step_draft(limit: Optional[int] = 10, dry_run: bool = False) -> int:
                 recruiter_name=recruiter_name
             )
 
-            if not dry_run:
-                page_fill_str = json.dumps(tailored.page_fill) if getattr(tailored, "page_fill", None) else None
-                update_application(
-                    job_id=job_id,
-                    status="drafted",
-                    resume_path=str(pdf_path),
-                    tailored_json_path=str(json_path),
-                    email_subject=subject,
-                    email_body=body,
-                    layout_warning=getattr(tailored, "layout_warning", False),
-                    page_fill=page_fill_str
-                )
-                drafted_count += 1
-                fill_info = f" (P1: {tailored.page_fill['page1']*100:.1f}%, P2: {tailored.page_fill['page2']*100:.1f}%)" if getattr(tailored, "page_fill", None) else ""
-                logger.info("Drafted application for '%s'. Resume: %s%s", job_data["company"], pdf_path.name, fill_info)
-            else:
-                drafted_count += 1
-                fill_info = f" (P1: {tailored.page_fill['page1']*100:.1f}%, P2: {tailored.page_fill['page2']*100:.1f}%)" if getattr(tailored, "page_fill", None) else ""
-                logger.info("[DRY-RUN] Tailored resume & drafted email for %s at %s%s", job_data["title"], job_data["company"], fill_info)
+            page_fill_str = json.dumps(tailored.page_fill) if getattr(tailored, "page_fill", None) else None
+            update_application(
+                job_id=job_id,
+                status="drafted",
+                resume_path=str(pdf_path),
+                tailored_json_path=str(json_path),
+                email_subject=subject,
+                email_body=body,
+                layout_warning=getattr(tailored, "layout_warning", False),
+                page_fill=page_fill_str
+            )
+            drafted_count += 1
+            fill_info = f" (P1: {tailored.page_fill['page1']*100:.1f}%, P2: {tailored.page_fill['page2']*100:.1f}%)" if getattr(tailored, "page_fill", None) else ""
+            logger.info("Drafted application for '%s'. Resume: %s%s", job_data["company"], pdf_path.name, fill_info)
 
         except Exception as e:
             logger.error("Failed drafting application for %s: %s", job_id, e)
@@ -288,7 +269,7 @@ def step_draft(limit: Optional[int] = 10, dry_run: bool = False) -> int:
     return drafted_count
 
 
-def step_send_approved(dry_run: bool = False, ignore_hours: bool = False) -> int:
+def step_send_approved(ignore_hours: bool = False) -> int:
     """Dispatches human-approved applications and speculative outreaches with anti-spam delays and daily limits."""
     init_db()
     approved_apps = list_applications_by_status("approved")
@@ -329,8 +310,7 @@ def step_send_approved(dry_run: bool = False, ignore_hours: bool = False) -> int
 
         if not recipient_email:
             logger.warning("No recruiter email contact found for job %s (%s). Marking 'skipped'.", job_id, job_data["company"])
-            if not dry_run:
-                update_application(job_id=job_id, status="skipped")
+            update_application(job_id=job_id, status="skipped")
             continue
         subject = app["email_subject"] or f"Application: {job_data['title']} - {settings.candidate_name}"
         body = app["email_body"] or "Please find my attached resume."
@@ -345,17 +325,15 @@ def step_send_approved(dry_run: bool = False, ignore_hours: bool = False) -> int
             body=body,
             pdf_attachment_path=pdf_path,
             company_name=job_data["company"],
-            dry_run=dry_run,
-            ignore_hours=ignore_hours or dry_run
+            ignore_hours=ignore_hours
         )
 
         if ok:
             sent_count += 1
-            if not dry_run:
-                # Anti-spam delay between sends
-                delay = random.uniform(settings.send_delay_min, settings.send_delay_max)
-                logger.info("Waiting %.1f seconds before next dispatch (anti-spam cooldown)...", delay)
-                time.sleep(delay)
+            # Anti-spam delay between sends
+            delay = random.uniform(settings.send_delay_min, settings.send_delay_max)
+            logger.info("Waiting %.1f seconds before next dispatch (anti-spam cooldown)...", delay)
+            time.sleep(delay)
         else:
             logger.warning("Dispatch halted: %s", msg)
             break
@@ -372,25 +350,23 @@ def step_send_approved(dry_run: bool = False, ignore_hours: bool = False) -> int
             logger.info("Dispatching approved speculative outreach #%d for %s...", oid, cname)
             ok, msg = send_company_outreach_email(
                 outreach_id=oid,
-                dry_run=dry_run,
-                ignore_hours=ignore_hours or dry_run
+                ignore_hours=ignore_hours
             )
             if ok:
                 sent_count += 1
-                if not dry_run:
-                    delay = random.uniform(settings.send_delay_min, settings.send_delay_max)
-                    logger.info("Waiting %.1f seconds before next dispatch (anti-spam cooldown)...", delay)
-                    time.sleep(delay)
+                delay = random.uniform(settings.send_delay_min, settings.send_delay_max)
+                logger.info("Waiting %.1f seconds before next dispatch (anti-spam cooldown)...", delay)
+                time.sleep(delay)
             else:
                 logger.warning("Speculative dispatch halted: %s", msg)
                 break
 
     logger.info("Send step complete. %d total emails sent.", sent_count)
-    log_event("pipeline", f"Sent {sent_count} approved applications & outreaches (dry_run={dry_run})")
+    log_event("pipeline", f"Sent {sent_count} approved applications & outreaches")
     return sent_count
 
 
-def step_followups(dry_run: bool = False) -> int:
+def step_followups() -> int:
     """Identifies applications due for 6-day follow-up and creates drafts."""
     init_db()
     due = get_due_followups()
@@ -405,63 +381,44 @@ def step_followups(dry_run: bool = False) -> int:
             original_subject=app.get("email_subject") or f"Application: {app['title']}",
             candidate_name=settings.candidate_name
         )
-        if not dry_run:
-            update_application(
-                job_id=job_id,
-                email_subject=draft["subject"],
-                email_body=draft["body"],
-                status="approved"  # Ready in queue for human approval
-            )
-            drafted += 1
-        else:
-            drafted += 1
-            logger.info("[DRY-RUN] Prepared follow-up for %s: %s", app["company"], draft["subject"])
+        update_application(
+            job_id=job_id,
+            email_subject=draft["subject"],
+            email_body=draft["body"],
+            status="approved"  # Ready in queue for human approval
+        )
+        drafted += 1
 
     logger.info("Follow-ups processed: %d queued for review.", drafted)
     return drafted
 
 
-def step_discover_companies(city: Optional[str] = None, limit: Optional[int] = None, dry_run: bool = False) -> Dict[str, Any]:
+def step_discover_companies(city: Optional[str] = None, limit: Optional[int] = None) -> Dict[str, Any]:
     """Phase A: Discovers companies across Kerala Parks, Bangalore lists, ATS boards, GitHub, and seed config."""
-    if dry_run:
-        logger.info("[DRY-RUN] Simulating company discovery...")
-        return {"discovered": 0, "processed": 0}
     return run_company_discovery(city=city, limit=limit)
 
 
-def step_enrich_companies(limit: Optional[int] = None, dry_run: bool = False) -> Dict[str, Any]:
+def step_enrich_companies(limit: Optional[int] = None) -> Dict[str, Any]:
     """Phase B: Evaluates employee size evidence ladder (20/50 rule)."""
-    if dry_run:
-        logger.info("[DRY-RUN] Simulating company size enrichment...")
-        return {}
     return run_company_enrichment(limit=limit)
 
 
-def step_score_companies(dry_run: bool = False) -> Dict[str, Any]:
+def step_score_companies() -> Dict[str, Any]:
     """Phase C: Scores field fit and hiring likelihood, assigning Tiers A, B, C, or excluded."""
-    if dry_run:
-        logger.info("[DRY-RUN] Simulating company scoring...")
-        return {}
     return run_company_scoring()
 
 
-def step_company_contacts(tier_filter: Optional[List[str]] = None, limit: Optional[int] = None, dry_run: bool = False) -> Dict[str, Any]:
+def step_company_contacts(tier_filter: Optional[List[str]] = None, limit: Optional[int] = None) -> Dict[str, Any]:
     """Phase D: Crawls official pages for public HR/careers contacts and validates MX records."""
-    if dry_run:
-        logger.info("[DRY-RUN] Simulating company contact discovery...")
-        return {}
     return run_company_contacts(tier_filter=tier_filter, limit=limit)
 
 
-def step_draft_companies(limit: Optional[int] = None, dry_run: bool = False) -> Dict[str, Any]:
+def step_draft_companies(limit: Optional[int] = None) -> Dict[str, Any]:
     """Phase E: Drafts speculative applications with pseudo-JD tailored 2-page resume and cold email."""
-    if dry_run:
-        logger.info("[DRY-RUN] Simulating company speculative drafting...")
-        return {}
     return run_company_drafting(limit=limit)
 
 
-def step_run_companies(city: Optional[str] = None, limit: Optional[int] = None, dry_run: bool = False) -> Dict[str, Any]:
+def step_run_companies(city: Optional[str] = None, limit: Optional[int] = None) -> Dict[str, Any]:
     """Executes the full company discovery & speculative outreach pipeline and prints the funnel."""
     logger.info("=== STARTING COMPANY-FIRST ENGINE (Discovery -> Size -> Scoring -> Contacts -> Drafting) ===")
     
@@ -469,15 +426,15 @@ def step_run_companies(city: Optional[str] = None, limit: Optional[int] = None, 
     backfill_jobs_to_companies()
 
     # 1. Discovery
-    disc_res = step_discover_companies(city=city, limit=limit, dry_run=dry_run)
+    disc_res = step_discover_companies(city=city, limit=limit)
     # 2. Size Enrichment
-    enrich_res = step_enrich_companies(limit=limit, dry_run=dry_run)
+    enrich_res = step_enrich_companies(limit=limit)
     # 3. Scoring & Tiers
-    score_res = step_score_companies(dry_run=dry_run)
+    score_res = step_score_companies()
     # 4. Contacts
-    contact_res = step_company_contacts(tier_filter=["A", "B"], limit=limit, dry_run=dry_run)
+    contact_res = step_company_contacts(tier_filter=["A", "B"], limit=limit)
     # 5. Speculative Drafting
-    draft_res = step_draft_companies(limit=limit, dry_run=dry_run)
+    draft_res = step_draft_companies(limit=limit)
 
     # Compute comprehensive company funnel
     companies = list_companies()
@@ -545,19 +502,19 @@ def step_run_companies(city: Optional[str] = None, limit: Optional[int] = None, 
     }
 
 
-def step_run_all(threshold: Optional[float] = None, limit: Optional[int] = 10, dry_run: bool = False, auto_send: bool = False) -> None:
+def step_run_all(threshold: Optional[float] = None, limit: Optional[int] = 10, auto_send: bool = False) -> None:
     """Executes both engines: Jobs Engine + Companies Engine, with shared daily cap and combined funnel."""
     logger.info("=== RUNNING FULL PIPELINE (Jobs Engine + Companies Engine) ===")
     
     # 1. Jobs Engine
     logger.info(">>> Stage 1: Running Jobs Engine...")
-    scraped_count = step_scrape(dry_run=dry_run)
-    matched_count = step_match(threshold=threshold, limit=limit, dry_run=dry_run)
-    drafted_count = step_draft(limit=limit, dry_run=dry_run)
+    scraped_count = step_scrape()
+    matched_count = step_match(threshold=threshold, limit=limit)
+    drafted_count = step_draft(limit=limit)
 
     # 2. Companies Engine
     logger.info(">>> Stage 2: Running Company Discovery & Speculative Engine...")
-    comp_funnel = step_run_companies(limit=limit, dry_run=dry_run)
+    comp_funnel = step_run_companies(limit=limit)
 
     # Combined Funnel Summary
     with get_connection() as conn:
@@ -606,24 +563,24 @@ def step_run_all(threshold: Optional[float] = None, limit: Optional[int] = 10, d
             contacts = get_contacts_for_job(app["job_id"])
             if contacts:
                 update_application(job_id=app["job_id"], status="approved")
-        step_send_approved(dry_run=dry_run)
+        step_send_approved()
     else:
         logger.info("=== Pipeline Complete. Applications queued in Review Queue & Companies tab. ===")
 
 
-def step_auto_apply(threshold: Optional[float] = None, limit: Optional[int] = 10, dry_run: bool = False) -> int:
+def step_auto_apply(threshold: Optional[float] = None, limit: Optional[int] = 10) -> int:
     """
     AUTONOMOUS END-TO-END PIPELINE:
     1. Scrapes latest job openings.
     2. Scores fit against candidate's master resume.
     3. Tailors resume and builds ATS PDF for every matched role.
     4. Generates tailored cold email matching JD requirements.
-    5. Automatically dispatches emails to public recruiter contacts via Gmail SMTP.
+    5. Dispatches emails to public recruiter contacts via Gmail SMTP.
     """
     logger.info("=== STARTING AUTONOMOUS AUTO-APPLY PIPELINE ===")
-    step_scrape(dry_run=dry_run)
-    step_match(threshold=threshold, limit=limit, dry_run=dry_run)
-    drafted_count = step_draft(limit=limit, dry_run=dry_run)
+    step_scrape()
+    step_match(threshold=threshold, limit=limit)
+    drafted_count = step_draft(limit=limit)
 
     # Auto-approve applications that have valid contacts
     drafted_apps = list_applications_by_status("drafted")
@@ -632,7 +589,7 @@ def step_auto_apply(threshold: Optional[float] = None, limit: Optional[int] = 10
         if contacts:
             update_application(job_id=app["job_id"], status="approved")
 
-    sent_count = step_send_approved(dry_run=dry_run)
+    sent_count = step_send_approved()
     logger.info("=== AUTO-APPLY FINISHED: %d tailored applications dispatched ===", sent_count)
     return sent_count
 
@@ -643,17 +600,16 @@ def apply_single_job(
     jd_text: str,
     job_url: str = "",
     recipient_email: Optional[str] = None,
-    auto_send: bool = True,
-    dry_run: bool = False
+    auto_send: bool = True
 ) -> dict:
     """
     Directly processes any job posting from text or URL:
-    1. Parses JD with Gemini 3.8 Flash
+    1. Parses JD with Gemini
     2. Scores fit against master resume
     3. Finds or uses provided HR/recruiter contact email (with MX validation)
     4. Tailors master resume (0 fabrication) and compiles single-column ATS PDF
     5. Writes personalized cold email tailored to the JD
-    6. Automatically dispatches via Gmail SMTP if auto_send is True
+    6. Dispatches via Gmail SMTP if auto_send is True
     """
     init_db()
     master = load_master_resume()
@@ -734,16 +690,14 @@ def apply_single_job(
 
     # 6. Send if enabled and contact exists
     if auto_send and final_email:
-        logger.info("Auto-sending application email to %s...", final_email)
+        logger.info("Sending application email to %s...", final_email)
         ok, msg = send_application_email(
             job_id=job_id,
             recipient_email=final_email,
             subject=subject,
             body=body,
             pdf_attachment_path=pdf_path,
-            company_name=company,
-            dry_run=dry_run,
-            ignore_hours=dry_run
+            company_name=company
         )
         result["sent"] = ok
         result["message"] = msg
@@ -755,7 +709,7 @@ def apply_single_job(
     return result
 
 
-def step_contacts(limit: Optional[int] = 10, dry_run: bool = False) -> int:
+def step_contacts(limit: Optional[int] = 10) -> int:
     """Discovers and verifies public HR/recruiter contacts for applications."""
     init_db()
     apps = list_applications_by_status("matched") + list_applications_by_status("drafted") + list_applications_by_status("approved")
@@ -776,22 +730,25 @@ def step_contacts(limit: Optional[int] = 10, dry_run: bool = False) -> int:
             found_count += len(contacts)
         else:
             logger.info("No public contact found for %s (%s). Marking 'needs_manual_contact'", job_data["company"], job_data["title"])
-            if not dry_run and app["status"] in ("matched", "drafted"):
+            if app["status"] in ("matched", "drafted"):
                 update_application(job_id=job_id, status="needs_manual_contact")
     logger.info("Contact discovery complete. %d contacts verified.", found_count)
     return found_count
 
 
 def main():
+    # Production Fail-Fast Validation
+    settings.require_production_environment()
+
     parser = argparse.ArgumentParser(description="JobPilot: Autonomous Job Discovery & Tailored Application Pipeline")
     parser.add_argument(
         "command",
         choices=[
-            "diagnose", "scrape", "match", "contacts", "draft", "send-approved",
-            "send-worker", "followups", "run-all", "auto-apply", "apply-job",
+            "run", "run-all", "diagnose", "scrape", "match", "contacts", "draft", "send-approved",
+            "send-worker", "followups", "auto-apply", "apply-job",
             "discover-companies", "enrich-companies", "score-companies",
             "company-contacts", "draft-companies", "run-companies", "clear-db",
-            "test-email", "send-diagnose"
+            "send-diagnose", "import-companies"
         ],
         help="Pipeline stage to execute"
     )
@@ -799,6 +756,8 @@ def main():
     parser.add_argument("--limit", type=int, default=10, help="Maximum number of items to process per batch")
     parser.add_argument("--city", type=str, default=None, help="Target city filter (e.g. Bangalore, Kochi, Trivandrum)")
     parser.add_argument("--tier", type=str, default="A,B", help="Comma-separated tiers for company contacts (e.g. 'A,B')")
+    parser.add_argument("--csv", type=str, default="data/ai_hr_contacts.csv", help="Path to contacts CSV file")
+    parser.add_argument("--skip-mx", action="store_true", help="Skip DNS MX record verification during import")
     parser.add_argument("--match-limit", type=int, default=None, help="Match limit for run-all")
     parser.add_argument("--draft-limit", type=int, default=None, help="Draft limit for run-all")
     parser.add_argument("--company", type=str, default="Target Company", help="Company name (for apply-job)")
@@ -808,7 +767,6 @@ def main():
     parser.add_argument("--email", type=str, default="", help="HR/Recruiter email (for apply-job)")
     parser.add_argument("--auto-send", action="store_true", help="Automatically dispatch emails after drafting")
     parser.add_argument("--ignore-hours", action="store_true", help="Bypass the 9:00 - 18:00 sending window")
-    parser.add_argument("--dry-run", action="store_true", help="Simulate execution without modifying DB or sending emails")
 
     args = parser.parse_args()
 
@@ -820,23 +778,22 @@ def main():
         print("\n=== Audit Summary ===")
         print("\n".join(report.split("\n")[:40]))
     elif args.command == "scrape":
-        step_scrape(dry_run=args.dry_run)
+        step_scrape()
     elif args.command == "match":
-        step_match(threshold=args.threshold, limit=args.limit, dry_run=args.dry_run)
+        step_match(threshold=args.threshold, limit=args.limit)
     elif args.command == "contacts":
-        step_contacts(limit=args.limit, dry_run=args.dry_run)
+        step_contacts(limit=args.limit)
     elif args.command == "draft":
-        step_draft(limit=args.limit, dry_run=args.dry_run)
+        step_draft(limit=args.limit)
     elif args.command == "send-approved":
-        step_send_approved(dry_run=args.dry_run, ignore_hours=args.ignore_hours)
+        step_send_approved(ignore_hours=args.ignore_hours)
     elif args.command == "send-worker":
         from src.send_worker import get_send_worker, IST
         print("=== JobPilot Background Send Worker Started ===")
-        print(f"Mode: {'DRY-RUN' if args.dry_run else 'LIVE'}")
         print(f"Ignore Hours: {args.ignore_hours}")
         print("Press Ctrl+C to terminate.")
         worker = get_send_worker()
-        worker.start(dry_run=args.dry_run, ignore_hours=args.ignore_hours)
+        worker.start(ignore_hours=args.ignore_hours)
         try:
             while True:
                 st_info = worker.get_status()
@@ -851,22 +808,13 @@ def main():
         print("Running JobPilot Send Diagnostic Subsystem...")
         report = run_send_diagnosis()
         print(report)
-    elif args.command == "test-email":
-        from src.sender import send_test_email
-        target = args.email or settings.candidate_email or settings.gmail_user
-        print(f"Sending live verification test email to: {target}...")
-        ok, msg = send_test_email(to_email=target)
-        if ok:
-            print(f"SUCCESS: {msg}")
-        else:
-            print(f"FAILED: {msg}")
     elif args.command == "followups":
-        step_followups(dry_run=args.dry_run)
-    elif args.command == "run-all":
+        step_followups()
+    elif args.command in ("run", "run-all"):
         m_limit = args.match_limit or args.limit
-        step_run_all(threshold=args.threshold, limit=m_limit, dry_run=args.dry_run, auto_send=args.auto_send)
+        step_run_all(threshold=args.threshold, limit=m_limit, auto_send=args.auto_send)
     elif args.command == "auto-apply":
-        step_auto_apply(threshold=args.threshold, limit=args.limit, dry_run=args.dry_run)
+        step_auto_apply(threshold=args.threshold, limit=args.limit)
     elif args.command == "apply-job":
         if not args.jd and not args.url:
             print("Error: Please provide --jd '...' or --url '...' to apply.")
@@ -877,8 +825,7 @@ def main():
             jd_text=args.jd or f"Job opening at {args.company} for {args.title}. Apply at {args.url}",
             job_url=args.url,
             recipient_email=args.email or None,
-            auto_send=args.auto_send,
-            dry_run=args.dry_run
+            auto_send=args.auto_send
         )
         print("\n=== Application Result ===")
         print(f"Company: {res['company']} | Role: {res['role']}")
@@ -888,30 +835,43 @@ def main():
         print(f"Status: {'SENT' if res['sent'] else 'SAVED'}")
         print(f"Message: {res['message']}")
     elif args.command == "discover-companies":
-        res = step_discover_companies(city=args.city, limit=args.limit, dry_run=args.dry_run)
+        res = step_discover_companies(city=args.city, limit=args.limit)
         print(f"Discovered: {res.get('discovered', 0)} | Stored/Updated: {res.get('processed', 0)}")
     elif args.command == "enrich-companies":
-        res = step_enrich_companies(limit=args.limit, dry_run=args.dry_run)
+        res = step_enrich_companies(limit=args.limit)
         print(f"Enrichment Complete: {res}")
     elif args.command == "score-companies":
-        res = step_score_companies(dry_run=args.dry_run)
+        res = step_score_companies()
         print(f"Scoring Complete: {res}")
     elif args.command == "company-contacts":
         tiers = [t.strip().upper() for t in args.tier.split(",") if t.strip()]
-        res = step_company_contacts(tier_filter=tiers, limit=args.limit, dry_run=args.dry_run)
+        res = step_company_contacts(tier_filter=tiers, limit=args.limit)
         print(f"Contacts Harvested: {res}")
     elif args.command == "draft-companies":
-        res = step_draft_companies(limit=args.limit, dry_run=args.dry_run)
+        res = step_draft_companies(limit=args.limit)
         print(f"Speculative Drafts Complete: {res}")
     elif args.command == "run-companies":
-        step_run_companies(city=args.city, limit=args.limit, dry_run=args.dry_run)
-    elif args.command == "clear-db":
-        from src.db import clear_database
-        print("Clearing database records...")
-        deleted = clear_database()
-        print("Database cleared successfully!")
-        for tbl, cnt in deleted.items():
-            print(f"  • {tbl}: {cnt} rows deleted")
+        step_run_companies(city=args.city, limit=args.limit)
+    elif args.command == "import-companies":
+        from src.companies.importer import import_companies_from_csv
+        csv_p = Path(args.csv)
+        print(f"Importing production companies and HR contacts from {csv_p} (DNS MX verification: {not args.skip_mx})...")
+        summary = import_companies_from_csv(csv_path=csv_p, check_mx=not args.skip_mx)
+        print("\n=== Company & HR Contacts Import Complete ===")
+        print(f"  • Companies Imported : {summary['companies_imported']}")
+        print(f"  • Contacts Harvested : {summary['contacts_imported']}")
+        print(f"  • Active MX Validated: {summary['mx_valid_contacts']}")
+        print(f"  • MX Failed (Skipped): {summary['mx_failed_contacts']}")
+    elif args.command == "import-companies":
+        from src.companies.importer import import_companies_from_csv
+        csv_p = Path(args.csv)
+        print(f"Importing production companies and HR contacts from {csv_p} (DNS MX verification: {not args.skip_mx})...")
+        summary = import_companies_from_csv(csv_path=csv_p, check_mx=not args.skip_mx)
+        print("\n=== Company & HR Contacts Import Complete ===")
+        print(f"  • Companies Imported : {summary['companies_imported']}")
+        print(f"  • Contacts Harvested : {summary['contacts_imported']}")
+        print(f"  • Active MX Validated: {summary['mx_valid_contacts']}")
+        print(f"  • MX Failed (Skipped): {summary['mx_failed_contacts']}")
 
 
 if __name__ == "__main__":

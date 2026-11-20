@@ -67,6 +67,16 @@ st.set_page_config(
 # Initialize DB on load
 init_db()
 
+# Startup Environment Validation - Fail Fast
+env_errors = settings.validate_production_environment()
+if env_errors:
+    st.error(
+        "🚨 **PRODUCTION CONFIGURATION ERROR: Cannot start JobPilot**\n\n"
+        + "\n".join(f"• {e}" for e in env_errors)
+        + "\n\nPlease configure your `.env` and configuration files to continue."
+    )
+    st.stop()
+
 # --- Custom Styling ---
 st.markdown("""
 <style>
@@ -111,13 +121,10 @@ page = st.sidebar.radio(
     "Navigation",
     [
         "📋 Review Queue",
-        "🏢 Target Companies",
-        "🎯 Instant Apply (Any Job)",
-        "💼 All Jobs",
-        "🚀 Sent Applications",
-        "📤 Send Logs",
+        "🏢 Companies",
+        "🚀 Sent",
         "⏰ Follow-ups",
-        "⚙️ Settings & Logs"
+        "⚙️ Settings & Health"
     ],
     index=0
 )
@@ -146,25 +153,16 @@ if st.sidebar.button("🏢 Run Company Engine", use_container_width=True):
         st.sidebar.success(f"Company Engine complete! Total: {comp_res.get('total_companies', 0)} companies.")
         st.rerun()
 
-dry_run_mode = st.sidebar.checkbox(
-    "Dry-Run Mode (Safe Testing)",
-    value=False,
-    help="When checked, sending is simulated without connecting to Gmail SMTP. Uncheck to send real emails."
-)
-if dry_run_mode:
-    st.sidebar.warning("⚠️ **DRY-RUN ACTIVE**\nSends will be simulated without Gmail SMTP.")
-
 st.sidebar.markdown("---")
 st.sidebar.subheader("⚡ Full Auto-Pilot")
 st.sidebar.caption("Scrape -> Match -> Tailor Resume -> Tailor Email -> Send automatically.")
 if st.sidebar.button("🚀 Run Auto-Pilot Now", type="primary", use_container_width=True):
     with st.spinner("Running Auto-Pilot pipeline..."):
-        sent = step_auto_apply(dry_run=dry_run_mode)
-        mode_text = "[DRY-RUN]" if dry_run_mode else "LIVE"
-        st.sidebar.success(f"Auto-Pilot completed ({mode_text}): {sent} application(s) processed!")
+        sent = step_auto_apply()
+        st.sidebar.success(f"Auto-Pilot completed: {sent} application(s) processed!")
         st.rerun()
 
-# --- Global Top-of-Page Health & Dry-Run Alerts ---
+# --- Global Top-of-Page Health Alert ---
 @st.cache_data(ttl=180)
 def _check_system_smtp_health():
     return check_smtp_health()
@@ -172,8 +170,6 @@ def _check_system_smtp_health():
 _smtp_healthy, _smtp_diag = _check_system_smtp_health()
 if not _smtp_healthy:
     st.error(f"🚨 **SMTP Dispatch Alert / Not Ready:** {_smtp_diag}\n\nEmails cannot leave Gmail until credentials and SMTP connection are valid. Configure `.env` and verify via `python -m src.pipeline send-diagnose`.")
-elif dry_run_mode:
-    st.warning("⚠️ **DRY-RUN MODE IS ENABLED:** Sending is in simulation mode. No real emails will leave Gmail until unchecked in the sidebar.")
 
 
 
@@ -218,7 +214,7 @@ if page == "📋 Review Queue":
     col_btn1, col_btn2, col_btn3 = st.columns([1.5, 1.5, 1])
     with col_btn1:
         if st.button("🚀 Send All Approved (Start Worker)", type="primary", use_container_width=True):
-            trigger_send_worker(dry_run=dry_run_mode)
+            trigger_send_worker()
             st.success("Background sender started! Queue is being processed with 60–180s anti-spam pacing off the main thread.")
             st.rerun()
     with col_btn2:
@@ -367,7 +363,6 @@ if page == "📋 Review Queue":
                                         body=body_input,
                                         pdf_attachment_path=pdf_path,
                                         company_name=app["company"],
-                                        dry_run=dry_run_mode,
                                         ignore_hours=True
                                     )
                                     if ok:
@@ -424,7 +419,15 @@ if page == "📋 Review Queue":
                         st.markdown(f"**Mode:** <span class='badge-pill score-high'>💼 Speculative Outreach</span>", unsafe_allow_html=True)
                         st.markdown(f"**Status:** <span style='background-color:{obadge_color}; color:white; padding:3px 8px; border-radius:10px; font-weight:bold;'>{ostatus.upper()}</span>", unsafe_allow_html=True)
                         st.markdown(f"**Tier & Company Score:** <span class='badge-pill score-mid'>Tier {tier}</span> — `{score:.1f}/100`", unsafe_allow_html=True)
-                        st.markdown(f"**Size Status:** `{size_st}` (20/50 Rule Verified)")
+                        if size_st == "unknown" or ostatus == "needs_review":
+                            st.markdown(f"**Size Status:** <span class='badge-pill score-mid'>⚠️ Size unconfirmed (&lt; 20 check required)</span>", unsafe_allow_html=True)
+                            if st.button("Confirm Size &ge; 20 Employees", key=f"conf_sz_{oid}", use_container_width=True):
+                                update_company(outreach["company_id"], {"size_status": "confirmed_20plus", "size_confidence": 1.0, "size_source": "User manual verification in UI"})
+                                update_company_outreach(oid, {"status": "drafted"})
+                                st.success("Size confirmed as 20+! Outreach is now ready for approval.")
+                                st.rerun()
+                        else:
+                            st.markdown(f"**Size Status:** `{size_st}` (20/50 Rule Verified)")
                         st.markdown(f"**Recipient Contact:** `{recip or 'Hiring Team'}` ✅")
 
                         pdf_path_str = outreach.get("resume_path")
@@ -444,16 +447,18 @@ if page == "📋 Review Queue":
                         col_sa, col_sb, col_sc = st.columns(3)
                         with col_sa:
                             if st.button("✅ Approve", key=f"appr_s_{oid}", use_container_width=True):
-                                update_company_outreach(oid, {"status": "approved", "email_subject": sub_val, "email_body": body_val})
-                                st.success("Speculative outreach approved!")
-                                st.rerun()
+                                if size_st == "unknown" or ostatus == "needs_review":
+                                    st.error("⚠️ Confirm company size (>= 20) using the button on the left before approving.")
+                                else:
+                                    update_company_outreach(oid, {"status": "approved", "email_subject": sub_val, "email_body": body_val})
+                                    st.success("Speculative outreach approved!")
+                                    st.rerun()
                         with col_sb:
                             if st.button("🚀 Send Now", key=f"send_s_{oid}", type="primary", use_container_width=True):
                                 with st.spinner("Dispatching speculative outreach..."):
                                     update_company_outreach(oid, {"email_subject": sub_val, "email_body": body_val})
                                     ok, msg = send_company_outreach_email(
                                         outreach_id=oid,
-                                        dry_run=dry_run_mode,
                                         ignore_hours=True
                                     )
                                     if ok:
@@ -471,7 +476,7 @@ if page == "📋 Review Queue":
 # ==========================================
 # PAGE: TARGET COMPANIES
 # ==========================================
-elif page == "🏢 Target Companies":
+elif page in ("🏢 Companies", "🏢 Target Companies"):
     st.title("🏢 Target Companies & Speculative Outreach")
     st.info("Company-first engine: discovers employers in Bangalore, Thiruvananthapuram, Kochi, Kozhikode, and Remote India. Evaluates employee size (20/50 rule), scores field fit, and identifies verified public HR contacts.")
 
@@ -538,7 +543,7 @@ elif page == "🏢 Target Companies":
     # Filters
     col_f1, col_f2, col_f3, col_f4 = st.columns([2, 1, 1, 1])
     with col_f1:
-        search_query = st.text_input("Search company name, domain, or notes:", placeholder="e.g. InMobi, QBurst, vision, drone...")
+        search_query = st.text_input("Search company name, domain, or notes (e.g. InMobi, QBurst, vision):")
     with col_f2:
         city_options = ["All", "Bangalore", "Thiruvananthapuram", "Kochi", "Kozhikode", "Remote India"]
         selected_city = st.selectbox("Filter City:", city_options, index=0)
@@ -646,109 +651,9 @@ elif page == "🏢 Target Companies":
 
 
 # ==========================================
-# PAGE: INSTANT APPLY (ANY JOB)
+# PAGE 3: SENT APPLICATIONS & OUTREACH
 # ==========================================
-elif page == "🎯 Instant Apply (Any Job)":
-    st.title("🎯 Instant Apply to Any Job")
-    st.info("Paste any Job Description from LinkedIn, Indeed, Naukri, or any company career page. JobPilot will extract the recruiter contact, tailor your resume, compile your ATS PDF, write a personalized cover email, and send it via your verified Gmail.")
-
-    col_i1, col_i2 = st.columns(2)
-    with col_i1:
-        custom_company = st.text_input("Company Name:", placeholder="e.g. DeepMind, Fractal, Bosch, InnovateLabs")
-        custom_title = st.text_input("Job Title:", placeholder="e.g. AI/ML Engineer, Computer Vision Developer")
-        custom_url = st.text_input("Job URL (optional):", placeholder="https://company.com/careers/job-123")
-        custom_email = st.text_input("HR / Recruiter Email (optional - leaves blank to auto-detect from text):", placeholder="careers@company.com or hr@company.com")
-
-    with col_i2:
-        custom_jd = st.text_area("Paste Job Description (JD) Text:", height=200, placeholder="Paste the responsibilities, requirements, and qualifications here...")
-        instant_autosend = st.checkbox("Auto-Send via Gmail SMTP immediately if contact is found", value=True)
-
-    if st.button("⚡ Tailor Resume, Email & Apply Now!", type="primary", use_container_width=True):
-        if not custom_company or not custom_title or not custom_jd:
-            st.error("Please provide at least Company Name, Job Title, and Job Description text.")
-        else:
-            with st.spinner("Processing JD with Gemini 3.8 Flash, tailoring resume, compiling ATS PDF, and drafting email..."):
-                res = apply_single_job(
-                    company=custom_company.strip(),
-                    title=custom_title.strip(),
-                    jd_text=custom_jd.strip(),
-                    job_url=custom_url.strip(),
-                    recipient_email=custom_email.strip() or None,
-                    auto_send=instant_autosend,
-                    dry_run=dry_run_mode
-                )
-
-                st.success(f"Application processed for **{res['company']}** ({res['role']})!")
-                st.markdown(f"**Match Fit Score:** `{res['match_score']:.1f}%`")
-                if res["recipient_email"]:
-                    st.markdown(f"**Recipient Contact:** `{res['recipient_email']}`")
-
-                col_res1, col_res2 = st.columns(2)
-                with col_res1:
-                    st.subheader("📄 Tailored ATS Resume")
-                    pdf_p = Path(res["pdf_path"])
-                    if pdf_p.exists():
-                        with open(pdf_p, "rb") as f:
-                            pdf_bytes = f.read()
-                        st.download_button(
-                            label=f"⬇️ Download {pdf_p.name}",
-                            data=pdf_bytes,
-                            file_name=pdf_p.name,
-                            mime="application/pdf",
-                            key="instant_pdf_dl"
-                        )
-
-                with col_res2:
-                    st.subheader("✉️ Tailored Email")
-                    st.text_input("Subject:", value=res["subject"], disabled=True)
-                    st.text_area("Body:", value=res["body"], height=160, disabled=True)
-
-                if res["sent"]:
-                    mode_lbl = "[DRY-RUN]" if dry_run_mode else "LIVE GMAIL"
-                    st.success(f"🎉 **Application Sent Successfully ({mode_lbl})!** {res['message']}")
-                else:
-                    st.info(f"ℹ️ {res['message']}")
-
-
-# ==========================================
-# PAGE 2: ALL JOBS
-# ==========================================
-elif page == "💼 All Jobs":
-    st.title("💼 Discovered Jobs")
-
-    jobs = list_jobs(limit=200)
-    if not jobs:
-        st.info("No jobs in database yet. Click 'Scrape New' in the sidebar.")
-    else:
-        # Search & Filter
-        col_f1, col_f2 = st.columns([2, 1])
-        with col_f1:
-            search_query = st.text_input("Search by title or company:", "")
-        with col_f2:
-            status_filter = st.selectbox("Filter by Status:", ["All", "new", "matched", "drafted", "approved", "sent", "replied", "skipped"])
-
-        filtered = jobs
-        if search_query:
-            filtered = [j for j in filtered if search_query.lower() in j["title"].lower() or search_query.lower() in j["company"].lower()]
-        if status_filter != "All":
-            filtered = [j for j in filtered if j.get("app_status") == status_filter]
-
-        st.write(f"Showing **{len(filtered)}** of **{len(jobs)}** jobs")
-
-        for j in filtered:
-            score = j.get("match_score") or 0.0
-            status_str = j.get("app_status") or "new"
-            with st.expander(f"{j['company']} — {j['title']} ({j['location']}) | Status: {status_str.upper()} | Score: {score:.1f}%"):
-                st.markdown(f"**Source:** {j['source']} | **Posted:** {j['posted_date'] or 'N/A'}")
-                st.markdown(f"**URL:** [View Posting]({j['url']})")
-                st.markdown("**Description Preview:**")
-                st.text(j['description'][:600] + ("..." if len(j['description']) > 600 else ""))
-
-
-# ==========================================
-# PAGE 3: SENT APPLICATIONS
-# ==========================================
-elif page == "🚀 Sent Applications":
+elif page in ("🚀 Sent", "🚀 Sent Applications"):
     st.title("🚀 Sent Applications")
     sent_apps = list_applications_by_status("sent") + list_applications_by_status("replied")
 
@@ -880,7 +785,6 @@ elif page == "📤 Send Logs":
                                     subject=log_entry.get("subject") or "",
                                     body="",
                                     company_name=l_company,
-                                    dry_run=dry_run_mode,
                                     ignore_hours=True
                                 )
                                 if ok:
@@ -895,7 +799,6 @@ elif page == "📤 Send Logs":
                             with st.spinner("Retrying speculative outreach..."):
                                 ok, msg = send_company_outreach_email(
                                     outreach_id=o_ref,
-                                    dry_run=dry_run_mode,
                                     ignore_hours=True
                                 )
                                 if ok:
@@ -951,7 +854,6 @@ elif page == "⏰ Follow-ups":
                             subject=f_subj,
                             body=f_body,
                             company_name=app["company"],
-                            dry_run=dry_run_mode,
                             ignore_hours=True
                         )
                         if ok:
@@ -971,9 +873,9 @@ elif page == "⏰ Follow-ups":
 
 
 # ==========================================
-# PAGE 5: SETTINGS & LOGS
+# PAGE 5: SETTINGS & HEALTH
 # ==========================================
-elif page == "⚙️ Settings & Logs":
+elif page == "⚙️ Settings & Health":
     st.title("⚙️ Settings, Credentials & Audit Logs")
 
     tab1, tab2, tab3 = st.tabs(["Credentials & Config", "Permanent Blocklist", "System Audit Logs"])
@@ -983,22 +885,13 @@ elif page == "⚙️ Settings & Logs":
         col_c1, col_c2 = st.columns(2)
         with col_c1:
             gemini_key_set = bool(settings.gemini_api_key and not settings.gemini_api_key.startswith("your_"))
-            st.write(f"**Gemini API Key:** {'✅ Configured' if gemini_key_set else '⚠️ Missing or placeholder (using offline mock)'}")
+            st.write(f"**Gemini API Key:** {'✅ Configured' if gemini_key_set else '❌ Missing in .env'}")
             st.write(f"**Model:** `{settings.gemini_model}`")
 
         with col_c2:
             gmail_set = bool(settings.gmail_user and settings.gmail_app_password and not settings.gmail_user.startswith("your_"))
-            st.write(f"**Gmail Sender:** {'✅ Configured (' + settings.gmail_user + ')' if gmail_set else '⚠️ Missing or placeholder'}")
-            st.write(f"**App Password:** {'✅ Configured' if gmail_set else '⚠️ Missing'}")
-            if gmail_set:
-                if st.button("📨 Send Test Verification Email", key="btn_test_email"):
-                    from src.sender import send_test_email
-                    with st.spinner("Connecting to Gmail SMTP SSL and dispatching verification email..."):
-                        ok, msg = send_test_email(settings.gmail_user)
-                        if ok:
-                            st.success(msg)
-                        else:
-                            st.error(msg)
+            st.write(f"**Gmail Sender:** {'✅ Configured (' + settings.gmail_user + ')' if gmail_set else '❌ Missing in .env'}")
+            st.write(f"**App Password:** {'✅ Configured' if gmail_set else '❌ Missing'}")
 
         st.markdown("---")
         st.subheader("LLM Token & Free-Tier Guardrails")

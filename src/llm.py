@@ -30,107 +30,15 @@ def _estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
-def _mock_generate(prompt: str, json_mode: bool = False) -> str:
-    """Deterministic fallback mock generator for offline testing, missing keys, or budget ceiling.
-    Dynamically derives data from master resume and config, with zero hardcoded personal data."""
-    logger.info("Using mock/cached fallback generator.")
-    prompt_lower = prompt.lower()
-
-    # Dynamically read master resume if present
-    master_info = {}
-    try:
-        if settings.master_resume_path and settings.master_resume_path.exists():
-            with open(settings.master_resume_path, "r", encoding="utf-8") as f:
-                master_info = json.load(f)
-    except Exception:
-        master_info = {}
-
-    contact = master_info.get("contact", {})
-    candidate_name = contact.get("name") or settings.candidate_name or "Candidate"
-    candidate_phone = contact.get("phone") or ""
-    candidate_location = contact.get("location") or "Remote"
-    candidate_summary = master_info.get("summary") or "Experienced engineer with a strong track record of delivering high-quality software."
-
-    # Extract real skills if present
-    skills_dict = master_info.get("skills", {})
-    all_skills = []
-    for s_list in skills_dict.values():
-        all_skills.extend(s_list)
-    top_skills = all_skills[:6] if all_skills else ["Python", "Problem Solving", "Software Engineering"]
-
-    # Extract first real experience bullets
-    experiences = master_info.get("experience", [])
-    bullets_by_company = {}
-    if experiences:
-        first_exp = experiences[0]
-        company = first_exp.get("company", "Engineering Team")
-        bullets_by_company[company] = first_exp.get("bullets", ["Contributed to software development and system architecture."])[:2]
-    else:
-        bullets_by_company["Engineering Team"] = ["Contributed to software development and system architecture."]
-
-    target_title = settings.target_roles[0] if settings.target_roles else "Software Engineer"
-
-    if json_mode:
-        if "must_have_skills" in prompt_lower or "jd parsing" in prompt_lower or "seniority" in prompt_lower:
-            return json.dumps({
-                "role": target_title,
-                "seniority": settings.user_profile.get("experience_level", "Mid-Level"),
-                "must_have_skills": top_skills[:4],
-                "nice_to_have_skills": top_skills[4:8] if len(top_skills) > 4 else ["Git", "Docker"],
-                "keywords": top_skills,
-                "responsibilities": [
-                    "Design, implement, and maintain software modules and services",
-                    "Collaborate with cross-functional teams to deliver production features",
-                    "Participate in code reviews and engineering discussions"
-                ],
-                "location": candidate_location,
-                "application_instructions": "Submit application via career portal or email"
-            }, indent=2)
-
-        if "match_score" in prompt_lower or "matcher" in prompt_lower:
-            return json.dumps({
-                "match_score": 80.0,
-                "matched_skills": top_skills[:4],
-                "missing_skills": [],
-                "rationale": f"Candidate profile aligns with core required skills ({', '.join(top_skills[:3])})."
-            }, indent=2)
-
-        if "tailored" in prompt_lower or "tailored_title" in prompt_lower:
-            return json.dumps({
-                "targeted_title": target_title,
-                "summary": candidate_summary,
-                "highlighted_skills": skills_dict if skills_dict else {"Core Skills": top_skills},
-                "selected_bullets_by_company": bullets_by_company
-            }, indent=2)
-
-        return json.dumps({"status": "success", "message": "Deterministic fallback response"})
-
-    # Non-json text responses (e.g. Email generation)
-    if "email" in prompt_lower or "cover" in prompt_lower:
-        signoff = f"Best regards,\n{candidate_name}"
-        if candidate_phone:
-            signoff += f"\n{candidate_phone}"
-        return (
-            "Hi Hiring Team,\n\n"
-            "I noticed your opening and wanted to reach out directly. "
-            f"With hands-on experience in {', '.join(top_skills[:3])}, "
-            "I have built scalable solutions that deliver measurable impact.\n\n"
-            "I have attached my resume for your review and would welcome the chance to discuss how my background aligns with your team's goals.\n\n"
-            "If this isn't the right contact, let me know and I won't follow up.\n\n"
-            f"{signoff}"
-        )
-
-    return "Deterministic fallback response."
-
-
 def generate(prompt: str, json_mode: bool = False, max_retries: int = 2, backoff_base: float = 2.0) -> str:
     """
     Single unified function for all LLM calls with strict anti-waste guardrails:
     1. Caches responses by SHA-256 hash in SQLite (never calls LLM twice for same prompt).
     2. Enforces daily request and token budgets from config.yaml to prevent quota exhaustion.
-    3. Paces requests with a minimum 4.0s pause between calls (guarantees strictly under 15 RPM).
+    3. Paces requests with a minimum interval between calls to keep strictly within RPM limits.
     4. Truncates overly long prompt input text to eliminate wasted tokens.
     5. Tracks daily token consumption in SQLite for full visibility.
+    6. Fail-fast error handling: stops immediately if credentials, files, or quotas fail.
     """
     global _last_live_call_timestamp
 
@@ -148,30 +56,24 @@ def generate(prompt: str, json_mode: bool = False, max_retries: int = 2, backoff
         logger.debug("LLM cache hit (0 tokens used) for hash: %s", prompt_hash[:10])
         return cached
 
-    # Guardrail 2: Check API Key presence
+    # Guardrail 2: Check API Key presence - Fail Fast
     api_key = settings.gemini_api_key.strip()
     if not api_key or api_key.startswith("your_"):
-        response_text = _mock_generate(prompt, json_mode=json_mode)
-        set_cached_llm_response(prompt_hash, response_text)
-        return response_text
+        raise RuntimeError("GEMINI_API_KEY is missing or invalid in .env. LLM generation requires a valid Gemini API key.")
 
-    # Guardrail 3: Check Daily Token & Request Quota
+    # Guardrail 3: Check Daily Token & Request Quota - Fail Fast
     usage = get_today_llm_usage()
     if usage["request_count"] >= settings.llm_max_requests_per_day:
-        msg = f"[QUOTA GUARD] Daily request limit ({settings.llm_max_requests_per_day}) reached for today. Switching to fallback to preserve free tier."
-        logger.warning(msg)
-        log_event("llm_guard", msg, level="WARNING")
-        fallback = _mock_generate(prompt, json_mode=json_mode)
-        set_cached_llm_response(prompt_hash, fallback)
-        return fallback
+        msg = f"[QUOTA GUARD] Daily request limit ({settings.llm_max_requests_per_day}) reached for today."
+        logger.error(msg)
+        log_event("llm_guard", msg, level="ERROR")
+        raise RuntimeError(msg)
 
     if usage["total_tokens"] >= settings.llm_max_tokens_per_day:
-        msg = f"[QUOTA GUARD] Daily token ceiling ({settings.llm_max_tokens_per_day}) reached for today. Switching to fallback to preserve free tier."
-        logger.warning(msg)
-        log_event("llm_guard", msg, level="WARNING")
-        fallback = _mock_generate(prompt, json_mode=json_mode)
-        set_cached_llm_response(prompt_hash, fallback)
-        return fallback
+        msg = f"[QUOTA GUARD] Daily token ceiling ({settings.llm_max_tokens_per_day}) reached for today."
+        logger.error(msg)
+        log_event("llm_guard", msg, level="ERROR")
+        raise RuntimeError(msg)
 
     # Guardrail 4: Pacing Rate Limiter (enforces minimum seconds between calls to prevent 429)
     min_interval = settings.llm_min_seconds_between_calls
@@ -188,7 +90,7 @@ def generate(prompt: str, json_mode: bool = False, max_retries: int = 2, backoff
     genai.configure(api_key=api_key)
     primary_model = settings.gemini_model or "gemini-3.5-flash-lite"
     candidate_models = []
-    for m in [primary_model, "gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.7-flash"]:
+    for m in [primary_model, "gemini-3.5-flash-lite", "gemini-3.8-flash"]:
         if m and m not in candidate_models:
             candidate_models.append(m)
 
@@ -245,9 +147,7 @@ def generate(prompt: str, json_mode: bool = False, max_retries: int = 2, backoff
             last_error = e
             continue
 
-    # Fallback if live call failed
+    # Fail-fast if live generation failed across all models
     log_event("llm", f"LLM generation failed after retries: {last_error}", level="ERROR")
-    logger.warning("Falling back to deterministic mock generator.")
-    fallback = _mock_generate(prompt, json_mode=json_mode)
-    set_cached_llm_response(prompt_hash, fallback)
-    return fallback
+    logger.error("LLM generation failed across all candidate models: %s", last_error)
+    raise RuntimeError(f"Gemini LLM generation failed across all candidate models: {last_error}")

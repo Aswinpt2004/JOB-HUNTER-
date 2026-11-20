@@ -141,7 +141,7 @@ def run_diagnosis(db_path: Path = None) -> str:
         accepted_locations[loc] += 1
         
         # Check experience filter
-        jd_dummy = JDParsed(
+        jd_parsed = JDParsed(
             role=j["title"],
             seniority="entry",
             must_have_skills=[],
@@ -149,7 +149,7 @@ def run_diagnosis(db_path: Path = None) -> str:
             keywords=[],
             responsibilities=[j["description"][:1000]]
         )
-        fits_exp, exp_reason = is_fresher_or_under_1_year(jd_dummy)
+        fits_exp, exp_reason = is_fresher_or_under_1_year(jd_parsed)
         if not fits_exp:
             rejected_reasons[f"Experience filter: {exp_reason}"] += 1
             continue

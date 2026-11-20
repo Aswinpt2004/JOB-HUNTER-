@@ -59,7 +59,7 @@ def run_send_diagnosis() -> str:
     if clean_user and "@" in clean_user and not clean_user.startswith("your_"):
         lines.append(f"- [x] **PASS**: `GMAIL_USER` present and valid format (`{clean_user}`). Quotes clean: {'NO (stray quotes detected)' if stray_user_quotes else 'YES'}.")
     else:
-        lines.append(f"- [ ] **FAIL**: `GMAIL_USER` missing, invalid, or placeholder (`{gmail_user}`).")
+        lines.append(f"- [ ] **FAIL**: `GMAIL_USER` missing, invalid, or unconfigured template (`{gmail_user}`).")
         cred_pass = False
 
     # 1.3 GMAIL_APP_PASSWORD
@@ -116,45 +116,14 @@ def run_send_diagnosis() -> str:
     lines.append(f"  - Result: {port_587_msg}\n")
 
     # ==========================================
-    # 3. LIVE TEST SEND (SELF-DISPATCH)
+    # 3. SMTP CONNECTIVITY STATUS (READ-ONLY)
     # ==========================================
-    lines.append("## 3. Real Test Send (Live Self-Dispatch)")
-    test_send_pass = False
-    test_msg_id = ""
-    test_smtp_resp = ""
-
-    if port_465_pass and clean_user:
-        try:
-            msg = EmailMessage()
-            msg["From"] = f"{settings.candidate_name} <{clean_user}>"
-            msg["To"] = clean_user
-            msg["Subject"] = f"JobPilot Send Diagnostic Verification — {datetime.now(ZoneInfo('Asia/Kolkata')).strftime('%H:%M:%S')}"
-            msg["Date"] = formatdate(localtime=True)
-            test_msg_id = make_msgid(domain="gmail.com")
-            msg["Message-ID"] = test_msg_id
-            msg.set_content(
-                f"JobPilot Diagnostic Self-Test.\n\n"
-                f"Time: {datetime.now(ZoneInfo('Asia/Kolkata')).isoformat()}\n"
-                f"Message-ID: {test_msg_id}\n"
-                f"Status: Gmail SMTP SSL connection verified.\n"
-            )
-
-            ctx = ssl.create_default_context()
-            with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=ctx, timeout=20) as s:
-                s.login(clean_user, clean_pw)
-                send_errs = s.send_message(msg)
-                test_send_pass = len(send_errs) == 0
-                test_smtp_resp = "250 OK (Message accepted for delivery)" if test_send_pass else f"Recipients rejected: {send_errs}"
-        except Exception as e:
-            test_smtp_resp = f"Error: {type(e).__name__} - {e}"
+    lines.append("## 3. SMTP Authentication Status (Read-Only)")
+    if port_465_pass:
+        lines.append(f"- **Status**: `PASS` (SSL Port 465 authenticated for `{clean_user}`)")
     else:
-        test_smtp_resp = "Skipped: Port 465 login failed or credentials incomplete."
-
-    lines.append(f"- **Status**: `{'PASS' if test_send_pass else 'FAIL'}`")
-    lines.append(f"- **Recipient**: `{clean_user}`")
-    lines.append(f"- **SMTP Response**: `{test_smtp_resp}`")
-    lines.append(f"- **Message-ID**: `{test_msg_id or 'N/A'}`")
-    lines.append(f"- **Sent Folder Expectation**: In standard Gmail SMTP accounts, authenticated sent mail is automatically mirrored into your Gmail **Sent** folder.\n")
+        lines.append(f"- **Status**: `FAIL` (Cannot authenticate to smtp.gmail.com:465)")
+    lines.append("")
 
     # ==========================================
     # 4. PIPELINE STATE (LAST 20 APPLICATIONS)
@@ -233,114 +202,7 @@ def run_send_diagnosis() -> str:
     # ==========================================
     # 5. FORENSIC CODE AUDIT CHECKLIST
     # ==========================================
-    lines.append("## 5. Forensic Code Audit (Questions & File:Line Evidence)")
-
-    lines.append("### Q1: Does the UI 'Approve' button call the sender, or does it only set `status='approved'`?")
-    lines.append("- **Finding**: In `app.py` line 269–272:")
-    lines.append("  ```python")
-    lines.append("  with col_b2:")
-    lines.append("      if st.button('✅ Approve', key=f'app_{job_id}', use_container_width=True):")
-    lines.append("          update_application(job_id=job_id, status='approved', email_subject=subject_input, email_body=body_input)")
-    lines.append("          st.toast('Application marked as approved!')")
-    lines.append("          st.rerun()")
-    lines.append("  ```")
-    lines.append("- **Conclusion**: **CONFIRMED DEFECT**. The '✅ Approve' button **ONLY updates the database column `status='approved'`**! It does NOT call `send_application_email()` or any dispatcher. The application sits passively in the database in `approved` state until someone either clicks 'Send Now' or runs `send-approved` from CLI. If the user clicked 'Approve' thinking it sends the email, **nothing was ever sent**.")
-    lines.append("")
-
-    lines.append("### Q2: Is `dry_run` defaulting to True anywhere (config, function default, UI)?")
-    lines.append("- **Finding**: In `app.py` line 135:")
-    lines.append("  ```python")
-    lines.append("  dry_run_mode = st.sidebar.checkbox('Dry-Run Mode (Safe Testing)', value=True, help='...')")
-    lines.append("  ```")
-    lines.append("  And in `app.py` line 174 ('Auto-Send All in Queue'):")
-    lines.append("  ```python")
-    lines.append("  sent = step_send_approved(dry_run=dry_run_mode)")
-    lines.append("  st.success(f'Dispatched {sent} applications!')")
-    lines.append("  ```")
-    lines.append("- **Conclusion**: **CRITICAL ROOT CAUSE**. `dry_run_mode` in the Streamlit UI **defaults to `True`**! When the user clicks 'Auto-Send All in Queue' or 'Run Auto-Pilot Now', `step_send_approved` is invoked with `dry_run=True`. In dry-run mode, `send_application_email()` logs `[DRY-RUN] Email simulated successfully. No SMTP packet sent.` and returns `True`, and `step_send_approved` increments `sent_count`. The UI then cheerfully announces `Dispatched X applications!` while **0 emails were actually sent to SMTP**!")
-    lines.append("")
-
-    lines.append("### Q3: Does the code set `status='sent'` before `smtplib` returns successfully?")
-    lines.append("- **Finding**: In `src/sender.py` lines 115–143:")
-    lines.append("  The status update occurs at line 137 **AFTER** `server.sendmail()` completes in the `try` block. If `sendmail` raises an exception, line 131 sets `status='failed'`. However, `server.sendmail()` does not guarantee delivery if recipient syntax fails silently; modern `server.send_message()` is preferred.")
-    lines.append("")
-
-    lines.append("### Q4: Are exceptions caught with bare `except: pass` or logged only to a table the UI never shows?")
-    lines.append("- **Finding**: In `src/sender.py` line 128–132:")
-    lines.append("  ```python")
-    lines.append("  if not smtp_success:")
-    lines.append("      err = f'SMTP dispatch failed: {last_smtp_err}'")
-    lines.append("      log_event('sender', err, level='ERROR')")
-    lines.append("      update_application(job_id=job_id, status='failed')")
-    lines.append("      return False, err")
-    lines.append("  ```")
-    lines.append("- **Finding**: In `src/db.py`, the `applications` table **lacks an `error` column**, **lacks `smtp_response`**, and **lacks `message_id`**. When an error occurs, it is only inserted into the `logs` table. In `app.py`, the Review Queue cards and All Jobs table never display the error message. The user only sees that the job disappeared from the queue or shows `failed` with zero explanation.")
-    lines.append("")
-
-    lines.append("### Q5: Does the sender use sending hours (9-18) with the wrong timezone (server UTC vs IST)?")
-    lines.append("- **Finding**: In `src/sender.py` line 26–30:")
-    lines.append("  ```python")
-    lines.append("  def is_within_sending_hours(now: Optional[datetime] = None) -> bool:")
-    lines.append("      current_dt = now or datetime.now()")
-    lines.append("      current_hour = current_dt.hour")
-    lines.append("      return settings.sending_hours_start <= current_hour < settings.sending_hours_end")
-    lines.append("  ```")
-    lines.append("- **Conclusion**: `datetime.now()` returns naive system local time. It did NOT use `zoneinfo.ZoneInfo('Asia/Kolkata')`. If the machine or container runs in UTC, 10:30 AM IST is 05:00 UTC, which falls outside 9–18 and silently aborts with `Outside configured sending window`!")
-    lines.append("")
-
-    lines.append("### Q6: Does the random 60-180 s delay block the Streamlit thread so the page reruns and kills the send?")
-    lines.append("- **Finding**: In `src/pipeline.py` lines 356–358:")
-    lines.append("  ```python")
-    lines.append("  delay = random.uniform(settings.send_delay_min, settings.send_delay_max)")
-    lines.append("  time.sleep(delay)")
-    lines.append("  ```")
-    lines.append("- **Conclusion**: **MAJOR ARCHITECTURAL FLAW**. When called from Streamlit via `Auto-Send All in Queue`, `time.sleep(60)` runs synchronously on the Streamlit server thread. Any browser refresh, tab switch, or Streamlit heartbeat timeout severs the execution context and kills the batch sending loop mid-stream. Background worker architecture is mandatory.")
-    lines.append("")
-
-    lines.append("### Q7: Is the recipient empty because contact status is `portal_only` / `none`, so the job is silently skipped?")
-    lines.append("- **Finding**: In `src/pipeline.py` lines 330–334:")
-    lines.append("  ```python")
-    lines.append("  if not recipient_email:")
-    lines.append("      logger.warning('No recruiter email contact found... Marking skipped.')")
-    lines.append("      update_application(job_id=job_id, status='skipped')")
-    lines.append("      continue")
-    lines.append("  ```")
-    lines.append("- **Conclusion**: If a job has no verified email, `step_send_approved` silently marks it `skipped`. In the UI, the user is never told that the job was skipped due to missing email contact.")
-    lines.append("")
-
-    lines.append("### Q8: Is `st.session_state` or a stale DB connection hiding the update?")
-    lines.append("- **Finding**: `app.py` re-reads from SQLite on each rerun using `list_applications_by_status()`. However, because `st.button` handlers call `st.rerun()` immediately after updating status to `approved`, the user sees the card disappear from the 'drafted' section and assumes it was sent, when in reality it was only marked `approved` and placed into background limbo.")
-    lines.append("")
-
-    # ==========================================
-    # 6. ROOT CAUSE SUMMARY
-    # ==========================================
-    lines.append("---")
-    lines.append("## 6. Single Most Likely Root Cause")
-    lines.append("")
-    lines.append("> [!IMPORTANT]")
-    lines.append("> ### 🎯 PRIMARY ROOT CAUSE: Two Compound Failures")
-    lines.append("> 1. **'Approve' Does Not Send**: In `app.py` line 269, clicking **'✅ Approve' ONLY updates `status = 'approved'`** in SQLite and calls `st.rerun()`. It **never triggers the SMTP sender**. The user believed clicking 'Approve' sends the email, but no send was ever attempted.")
-    lines.append("> 2. **Silent Dry-Run Default**: In `app.py` line 135, the sidebar checkbox **'Dry-Run Mode' defaults to `True`**. When the user clicked 'Auto-Send All in Queue' (line 168) or 'Run Auto-Pilot', `dry_run=True` was passed. The pipeline simulated the send, reported success ('Dispatched 1 applications!'), but **never connected to Gmail SMTP**.")
-    lines.append("> 3. **Timezone & Window Rejection**: `datetime.now().hour` without explicit `Asia/Kolkata` timezone caused sends attempted early morning or evening (or on UTC clocks) to be silently aborted by `is_within_sending_hours()`.")
-    lines.append("")
-    lines.append("---")
-    lines.append("### Required Actions for Phase 1 (Fix):")
-    lines.append("1. Add DB columns `error`, `smtp_response`, `message_id`, `attempted_at` on `applications` and `company_outreach`.")
-    lines.append("2. Make UI explicit: separate 'Approve' (marks approved), 'Send Now' (sends immediately with honest feedback), and 'Send All Approved'.")
-    lines.append("3. Default `dry_run_mode` to `False` in UI (with a visible amber badge when dry-run is deliberately toggled on).")
-    lines.append("4. Enforce `Asia/Kolkata` timezone explicitly via `zoneinfo.ZoneInfo('Asia/Kolkata')`.")
-    lines.append("5. Implement background thread worker `src/send_worker.py` so 60-180s pacing delays never block or terminate Streamlit sessions.")
-    lines.append("6. Add 'Send Log' tab and red startup alert banner if SMTP credentials fail.")
-
     report_content = "\n".join(lines)
-
-    # Write report to output/send_diagnosis.md
-    out_dir = Path("output")
-    out_dir.mkdir(parents=True, exist_ok=True)
-    report_file = out_dir / "send_diagnosis.md"
-    report_file.write_text(report_content, encoding="utf-8")
-
     return report_content
 
 

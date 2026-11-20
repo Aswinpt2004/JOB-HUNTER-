@@ -243,7 +243,7 @@ def find_recruiter_contacts(
     text_candidates = extract_emails_from_text(job.description)
     for email in text_candidates:
         domain = email.split("@")[-1].lower()
-        if domain in ["example.com", "example.org", "example.net", "sample.com", "domain.com"]:
+        if not domain or "." not in domain:
             continue
         if email in seen_emails or is_blocked(email) or is_no_reply_or_generic(email):
             continue
@@ -276,7 +276,7 @@ def find_recruiter_contacts(
         page_candidates = _scrape_company_contact_page(job)
         for email in page_candidates:
             domain = email.split("@")[-1].lower()
-            if domain in ["example.com", "example.org", "example.net", "sample.com", "domain.com"]:
+            if not domain or "." not in domain:
                 continue
             if email in seen_emails or is_blocked(email) or is_no_reply_or_generic(email):
                 continue

@@ -1,231 +1,118 @@
-# ✈️ JobPilot: Autonomous Local Job Discovery & Tailored Application Assistant
+# ✈️ JobPilot: Autonomous Job Discovery & Tailored Application Assistant
 
-JobPilot is a local, privacy-focused, zero-paid-API automation assistant built with Python 3.11+. It monitors public job boards, scores postings against your master resume, extracts public recruiter contacts, strictly tailors ATS-compliant resumes and personalized cold emails, and dispatches them **only after your explicit human approval**.
-
----
-
-## 🎯 Key Features & Guarantees
-- **100% Free Stack**: Uses Google Gemini's free tier, Gmail SMTP, and open-source scraping/rendering libraries. No paid subscriptions or SaaS dependencies.
-- **Strict Human Approval & Optional Auto-Pilot**: Default mode is Review Queue (nothing sent without click). Auto-Pilot mode (`auto-apply`) can be triggered when you want qualified jobs tailored and dispatched automatically.
-- **Token Protection & Anti-Waste Guardrails**:
-  - **SQLite Cache**: SHA-256 prompt hashing guarantees identical JDs/prompts are never sent to Gemini twice (0 duplicate tokens).
-  - **Smart Short-Circuit**: Irrelevant scraped postings with 0 skill overlap skip LLM evaluation entirely, saving thousands of tokens.
-  - **JD Boilerplate Truncation**: Automatically caps raw JD text at 3,000 characters, stripping legal and cookie disclaimers before LLM calls.
-  - **Daily Quota Ceiling**: Hard daily limit (default: 250 requests, 350k tokens) ensures you never exceed Google's 1,500 RPD / 1M TPM free limits.
-  - **Live Pacing**: Enforces minimum 4.0-second delay between consecutive live calls, staying strictly under 15 requests per minute (RPM) to prevent HTTP 429 rate limits.
-- **Zero-Fabrication Verifier**: The master resume (`data/master_resume.json`) is the single source of truth. The system enforces an automated post-generation verification step that strips or flags any fabricated skills, employers, metrics, or degrees.
-- **Ethical & Anti-Spam Guardrails**:
-  - Respects `robots.txt` and uses polite 2–5s delays.
-  - Never scrapes LinkedIn, Naukri, or Indeed.
-  - Extracts only publicly listed business/recruiter emails with MX domain verification via `dnspython`.
-  - Enforces a 15 email/day cap, 30-day company/email cooldown, local business hours window (9 AM – 6 PM), and permanent opt-out blocklisting.
-  - Mandatory opt-out line included in every cold email.
-  - At most **one** 6-day polite follow-up.
+JobPilot is a production-grade, local, privacy-preserving AI assistant built with Python 3.11+. It discovers companies and job postings in target locations, evaluates technical fit against your genuine master resume, verifies legitimate public HR contacts via DNS MX validation, tailors 2-page exact ATS resumes and concise cold emails, and delivers them through Gmail SMTP **only after your explicit human approval**.
 
 ---
 
-## 🏗️ Architecture & Project Structure
-```text
-jobpilot/
-├── config.yaml                 # User profile, search keywords, company slugs, sending caps
-├── .env.example                # Template for Gemini API key & Gmail credentials
-├── .gitignore                  # Keeps local database, PDFs, and secrets private
-├── requirements.txt            # Python dependencies
-├── README.md                   # Setup, usage, and operations guide
-├── data/
-│   ├── master_resume.json      # Single source of truth for candidate details
-│   └── jobpilot.db             # Local SQLite database (auto-created on first run)
-├── templates/
-│   ├── resume.html             # ATS-optimized single-column resume template
-│   └── email_prompt.txt        # Cold email prompt template
-├── output/
-│   └── resumes/                # Generated tailored ATS PDFs and JSONs
-├── src/
-│   ├── __init__.py
-│   ├── config.py               # YAML & environment variable loader
-│   ├── db.py                   # SQLite schema, indices & CRUD functions
-│   ├── models.py               # Pydantic data schemas
-│   ├── llm.py                  # Gemini unified generator with cache & exponential backoff
-│   ├── jd_parser.py            # Extracts role, skills, keywords, and instructions
-│   ├── matcher.py              # Hybrid deterministic + semantic fit score (0-100)
-│   ├── resume_tailor.py        # Strict no-fabrication tailor & verification engine
-│   ├── pdf_builder.py          # ATS-friendly PDF generation (xhtml2pdf / WeasyPrint / python-docx)
-│   ├── email_writer.py         # Concise, non-salesy 100-150 word application email generator
-│   ├── contacts.py             # Public recruiter contact finder & MX validation
-│   ├── scrapers/               # Polite job board crawlers
-│   │   ├── base.py             # Base crawler with delays and deduplication
-│   │   ├── greenhouse.py       # Greenhouse public boards API
-│   │   ├── lever.py            # Lever public postings API
-│   │   ├── remotive.py         # Remotive public API
-│   │   └── career_page.py      # Generic career page scraper with Playwright fallback
-│   ├── sender.py               # Gmail SMTP dispatcher with rate-limits & guardrails
-│   ├── followup.py             # 6-day follow-up tracker & blocklist manager
-│   └── pipeline.py             # CLI orchestrator with --dry-run
-├── app.py                      # Streamlit interactive human-review dashboard
-└── tests/                      # Pytest unit test suite
-    ├── test_jd_parser.py
-    ├── test_verifier.py
-    ├── test_contacts.py
-    ├── test_dedupe.py
-    └── test_sender_cap.py
-```
+## 🎯 Key Guarantees & Safeguards
+
+- **Human-in-the-Loop Approval**: Every application and speculative inquiry is drafted to a review queue. No email leaves Gmail without explicit approval.
+- **Truthful Delivery**: Connects directly to `smtp.gmail.com:465` (SSL) using a 16-character Google App Password. Dispatched emails appear in your Gmail Sent folder with genuine Message-IDs.
+- **Strict Anti-Spam Safeguards**:
+  - **Shared Daily Cap**: Maximum 15 emails per day across both reactive jobs and speculative company outreach.
+  - **Human Sending Spacing**: Random 60–180 second delays between consecutive dispatches.
+  - **Local Sending Hours**: Only dispatches between **09:00 and 18:00 IST** (Asia/Kolkata).
+  - **30-Day Cooldown**: Prevents reaching out to any company or email address contacted in the last 30 days.
+  - **Single Follow-Up**: At most one polite follow-up after 6 days.
+  - **Permanent Blocklist**: Immediate, permanent suppression of any recipient who requests to opt out.
+- **Anti-Hallucination & ATS Resumes**:
+  - The master resume (`data/master_resume.json`) is the sole ground truth.
+  - Verifier strips or flags any ungrounded skills, employers, metrics, or degrees.
+  - Renders pixel-exact, 2-page ATS-formatted PDFs with vertical page-fill enforcement (93–100%).
+- **Public & Sanctioned Contacts Only**:
+  - Discovers official listings from public tech park directories and official career portals.
+  - Validates DNS MX records before queuing any contact address.
 
 ---
 
-## 🚀 Installation & Setup Guide
+## 🚀 Quickstart Guide
 
 ### 1. Prerequisites
 - **Python 3.11+** installed ([python.org](https://www.python.org/downloads/)).
-- Git installed.
+- Google Gemini API key ([aistudio.google.com](https://aistudio.google.com)).
+- Gmail account with 2-Factor Authentication enabled and a **16-character App Password**.
 
-### 2. Set Up Virtual Environment (Windows)
+### 2. Installation
 Open PowerShell in the project directory:
 ```powershell
-# Create virtual environment
+# 1. Activate or create virtual environment
 python -m venv venv
-
-# Activate virtual environment
 .\venv\Scripts\Activate.ps1
 
-# Upgrade pip and install dependencies
+# 2. Install production dependencies
 pip install -r requirements.txt
 ```
-*(If using `uv`: `uv venv venv` and `uv pip install -r requirements.txt --python .\venv\Scripts\python.exe`)*
 
-### 3. Configure API Key & Credentials
-Copy `.env.example` to `.env`:
-```powershell
-Copy-Item .env.example .env
+### 3. Environment Configuration
+Create a `.env` file at the project root:
+```env
+GEMINI_API_KEY=your_actual_gemini_api_key_here
+GMAIL_USER=your_real_email@gmail.com
+GMAIL_APP_PASSWORD=abcdefghijklmnop
 ```
-Open `.env` in any text editor and fill in:
+*(App password must be 16 lowercase characters with spaces removed).*
 
-#### A. Free Google Gemini API Key
-1. Go to [Google AI Studio](https://aistudio.google.com/).
-2. Sign in with your Google Account and click **Get API Key**.
-3. Create a free API key and paste it:
-   ```env
-   GEMINI_API_KEY=your_gemini_api_key_here
-   GEMINI_MODEL=gemini-3.5-flash-lite
-   ```
-*(Note: JobPilot comes equipped with automated model cascading across `gemini-3.5-flash-lite`, `gemini-3.5-flash`, `gemini-3.7-flash`, and `gemini-3.8-flash` so if a free-tier model encounters temporary quota limits, it seamlessly transitions to the next active model without interrupting your workflow).*
+### 4. Load Production Companies & HR Contacts
+Import verified regional companies and official HR/careers email contacts:
+```powershell
+python -m src.pipeline import-companies --csv data/ai_hr_contacts.csv
+```
+This performs live DNS MX validation on each company domain and registers their profile, size signals, and hiring contacts into the local database.
 
-#### B. Free Gmail App Password (for Human-Approved Sending)
-1. Go to your [Google Account Security Settings](https://myaccount.google.com/security).
-2. Ensure **2-Step Verification** is turned ON.
-3. Search for or navigate to [App Passwords](https://myaccount.google.com/apppasswords).
-4. Create a new App Password called `JobPilot`.
-5. Copy the 16-character generated code and paste it into `.env`:
-   ```env
-   GMAIL_USER=your_email@gmail.com
-   GMAIL_APP_PASSWORD=abcd efgh ijkl mnop
-   ```
+### 5. Run the Discovery & Matching Pipeline
+Run the combined pipeline to discover jobs, score opportunities, and generate tailored application drafts:
+```powershell
+python -m src.pipeline run
+```
 
-### 4. Fill Your Master Resume
-Edit `data/master_resume.json` with your real background. This file is your **single source of truth**:
-- **contact**: Name, email, phone, location, LinkedIn, GitHub, portfolio.
-- **summary**: Your core elevator pitch.
-- **skills**: Categorized lists of your real languages, frameworks, databases, and tools.
-- **experience**: Work history with bullet points highlighting your accomplishments.
-- **projects**: Key projects with technologies, links, and bullets.
-- **education**: Degree, institution, graduation year.
-- **certifications**: Any genuine professional certifications.
+### 6. Launch the Dashboard
+Open the interactive Streamlit dashboard:
+```powershell
+streamlit run app.py
+```
+Navigate to `http://localhost:8501`:
+1. **Review Queue**: Inspect tailored 2-page resumes, verify email copy, and click **Approve** or **Send Now**.
+2. **Companies**: Browse verified companies, assigned tiers (A/B/C), and verified contacts.
+3. **Sent**: Review delivery logs, timestamps, and Google Message-IDs.
+4. **Follow-ups**: Monitor due follow-ups (capped at 1 per company).
+5. **Settings & Health**: Check live SMTP connection status and quota usage.
 
-### 5. Tune `config.yaml`
-Customize `config.yaml` with your preferred target roles, locations, keywords, and Greenhouse/Lever board slugs:
-```yaml
-search_filters:
-  keywords:
-    - "python"
-    - "backend"
-    - "fastapi"
-  min_match_score: 65
-
-sending:
-  daily_cap: 15
-  sending_hours_start: 9
-  sending_hours_end: 18
-  cooldown_days_per_company: 30
-  followup_days: 6
+### 7. Background Delivery (Optional)
+To run the automated, paced background sender during IST business hours for approved items:
+```powershell
+python -m src.pipeline send-worker
 ```
 
 ---
 
-## 🖥️ Running the Application
+## 📋 Production CLI Reference
 
-### 1. Interactive Streamlit Dashboard (Recommended)
-Launch the human-in-the-loop dashboard:
-```powershell
-.\venv\Scripts\python -m streamlit run app.py
-```
-This opens `http://localhost:8501` in your browser. From here you can:
-- **Scrape, Match & Tailor** with single-click sidebar buttons.
-- Toggle **Dry-Run Mode** on/off.
-- View **Review Queue**: preview the tailored ATS PDF, read the match breakdown, edit the personalized email draft, and click **Approve** or **Send Now**.
-- Track **Sent Applications** and mark recruiter replies.
-- Review and trigger **Follow-ups** after 6 days.
-- Manage the permanent **Blocklist** and audit logs.
-
-### 2. Command-Line Interface (CLI Pipeline)
-You can run individual stages or schedule them:
-```powershell
-# Scrape new job openings from public APIs & career boards
-.\venv\Scripts\python -m src.pipeline scrape
-
-# Match discovered jobs against your master resume
-.\venv\Scripts\python -m src.pipeline match --threshold 65
-
-# Tailor ATS resumes (PDF + JSON) and draft cold emails
-.\venv\Scripts\python -m src.pipeline draft
-
-# Run Scrape -> Match -> Draft in one safe pass (never auto-sends)
-.\venv\Scripts\python -m src.pipeline run-all
-
-# Simulate execution with the --dry-run flag
-.\venv\Scripts\python -m src.pipeline run-all --dry-run
-
-# Dispatch human-approved applications via Gmail SMTP
-.\venv\Scripts\python -m src.pipeline send-approved
-
-# Check and draft 6-day follow-ups
-.\venv\Scripts\python -m src.pipeline followups
-```
+| Command | Description |
+| :--- | :--- |
+| `python -m src.pipeline run` | Runs full discovery, scoring, and drafting across jobs and companies |
+| `python -m src.pipeline import-companies --csv <path>` | Imports real company contacts with DNS MX checks |
+| `python -m src.pipeline send-approved` | Dispatches all approved applications within IST sending hours |
+| `python -m src.pipeline send-worker` | Runs continuous background sending worker with 60–180s pacing |
+| `python -m src.pipeline send-diagnose` | Audits credentials, SMTP connection, and queue state |
+| `python -m src.pipeline followups` | Drafts due follow-up emails (6-day cooldown, 1-follow-up limit) |
+| `streamlit run app.py` | Launches the Streamlit dashboard |
 
 ---
 
-## ⏰ Scheduling Automated Scans
+## 🔒 Configuration (`config.yaml`)
 
-### Windows Task Scheduler
-To run `run-all` daily at 8:00 AM:
-1. Open **Task Scheduler** in Windows (`taskschd.msc`).
-2. Click **Create Basic Task...** and name it `JobPilot Daily Scan`.
-3. Set Trigger to **Daily** at `08:00 AM`.
-4. Set Action to **Start a program**:
-   - **Program/script**: `D:\project JOB HUNT\venv\Scripts\python.exe`
-   - **Add arguments**: `-m src.pipeline run-all`
-   - **Start in**: `D:\project JOB HUNT`
-5. Finish. Every morning, your review queue will be pre-populated with matched, drafted jobs ready for your morning review in Streamlit.
-
-### Linux / macOS Cron
-Add this entry to your crontab (`crontab -e`):
-```bash
-0 8 * * * cd "/path/to/jobpilot" && ./venv/bin/python -m src.pipeline run-all >> logs/cron.log 2>&1
-```
+- `user_profile`: Candidate contact details, target roles, and preferred locations.
+- `search_filters`: Positive keywords, excluded locations, and minimum match score.
+- `sending`: Daily cap (`15`), delays (`60–180s`), business hours (`9–18` IST), and cooldown (`30` days).
+- `company_discovery`: Size threshold (`min_employees: 20`, `preferred_employees: 50`).
+- `outreach.require_contact_email`: Ensures speculative emails are only drafted for companies with verified contacts.
 
 ---
 
-## 🧪 Running Unit Tests
-Execute the test suite to verify the parser, no-fabrication verifier, contacts extractor, deduplication, and sending guardrails:
+## 🧪 Developer Tests
+
+Unit tests are located in `dev/tests/` and can be run using the dev environment:
 ```powershell
-.\venv\Scripts\pytest -v
+pip install -r requirements-dev.txt
+pytest dev/tests -o pythonpath=.
 ```
-
----
-
-## ⚠️ Known Limitations & Best Practices
-
-1. **Recruiter Email Availability**: Not all companies list public recruiter emails in job postings. For postings without public emails, JobPilot marks them as **"apply via link"** and will not attempt to guess emails or cold-email them.
-2. **WeasyPrint on Windows**: WeasyPrint requires native GTK/Pango C libraries. JobPilot automatically utilizes `xhtml2pdf` and `python-docx` as native zero-configuration fallbacks on Windows, ensuring reliable single-column ATS document generation.
-3. **Gemini Free Tier Quota**: The free tier of Gemini allows up to 15 requests per minute (RPM). JobPilot automatically hashes and caches every prompt and response in SQLite to prevent duplicate calls, and implements exponential backoff to handle HTTP 429 rate limits gracefully.
-4. **Gmail Sending Limits**: Free Gmail accounts have a sending limit of 500 emails/day, but for job hunting etiquette, JobPilot defaults to a conservative **15 emails/day cap** to ensure deliverability and avoid spam classification.
-5. **Human Inspection Recommended**: Always take 30 seconds in the Review Queue to glance over the tailored resume and email draft before clicking Send. Customizing a sentence with a specific detail about the company's recent work yields significantly higher response rates.
-

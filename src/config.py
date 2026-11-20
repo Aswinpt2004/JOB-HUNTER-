@@ -13,6 +13,9 @@ ENV_PATH = ROOT_DIR / ".env"
 load_dotenv(dotenv_path=ENV_PATH)
 
 
+VALID_GEMINI_MODELS = {"gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.5-pro"}
+
+
 class Config:
     def __init__(self, config_file: Path = CONFIG_PATH):
         self.config_file = config_file
@@ -219,7 +222,15 @@ class Config:
 
     @property
     def gemini_model(self) -> str:
-        return os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+        return self.data.get("gemini_model") or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+
+    @property
+    def outreach(self) -> Dict[str, Any]:
+        return self.data.get("outreach", {})
+
+    @property
+    def require_contact_email(self) -> bool:
+        return bool(self.outreach.get("require_contact_email", True))
 
     @property
     def gmail_user(self) -> str:
@@ -228,6 +239,44 @@ class Config:
     @property
     def gmail_app_password(self) -> str:
         return os.getenv("GMAIL_APP_PASSWORD", "")
+
+    def validate_production_environment(self) -> List[str]:
+        """
+        Validates presence and format of all required production credentials and files.
+        Returns a list of error messages (empty if completely valid).
+        """
+        errors = []
+        if not ENV_PATH.exists():
+            errors.append("Missing .env file at project root. Create .env with GEMINI_API_KEY, GMAIL_USER, and GMAIL_APP_PASSWORD.")
+
+        if not self.gemini_api_key or self.gemini_api_key.startswith("your_"):
+            errors.append("GEMINI_API_KEY is not set or contains default template value in .env. Set a valid Gemini API key.")
+
+        if self.gemini_model not in VALID_GEMINI_MODELS:
+            errors.append(f"Configured GEMINI_MODEL '{self.gemini_model}' is invalid. Allowed production models: {sorted(list(VALID_GEMINI_MODELS))}.")
+
+        gmail_u = self.gmail_user.strip().strip("\"'")
+        if not gmail_u or "@" not in gmail_u or gmail_u.startswith("your_"):
+            errors.append("GMAIL_USER is not set or invalid in .env. Set your real Gmail address.")
+
+        gmail_pw = self.gmail_app_password.replace(" ", "").strip("\"'")
+        if not gmail_pw or len(gmail_pw) != 16 or gmail_pw.startswith("your_"):
+            errors.append("GMAIL_APP_PASSWORD is not set or not 16 characters in .env. Generate a 16-character Google App Password.")
+
+        if not self.master_resume_path.exists():
+            errors.append(f"Master resume file not found at {self.master_resume_path}.")
+
+        if not self.config_file.exists():
+            errors.append(f"Configuration file not found at {self.config_file}.")
+
+        return errors
+
+    def require_production_environment(self) -> None:
+        """Fails fast by raising RuntimeError if any production credential or file is missing."""
+        errors = self.validate_production_environment()
+        if errors:
+            msg = "Production Environment Validation Failed:\n" + "\n".join(f"  • {e}" for e in errors)
+            raise RuntimeError(msg)
 
 
 # Global singleton

@@ -67,7 +67,6 @@ def send_application_email(
     body: str,
     pdf_attachment_path: Optional[Path] = None,
     company_name: str = "",
-    dry_run: bool = False,
     ignore_hours: bool = False
 ) -> Tuple[bool, str]:
     """
@@ -126,20 +125,7 @@ def send_application_email(
         update_application(job_id=job_id, status="approved", error=window_msg)
         return False, window_msg
 
-    # 5. DRY-RUN MODE: Simulate without dispatching
-    if dry_run:
-        sim_msg = f"[DRY-RUN] Email to {recipient_clean} ('{subject}') simulated successfully. No SMTP packet sent."
-        logger.info(sim_msg)
-        log_event("sender", sim_msg)
-        update_application(
-            job_id=job_id,
-            status="approved",
-            smtp_response="DRY_RUN_SIMULATION",
-            error=None
-        )
-        return True, sim_msg
-
-    # 6. Check Gmail credentials
+    # 5. Check Gmail credentials
     gmail_user = settings.gmail_user.strip()
     gmail_app_pw = settings.gmail_app_password.strip().replace(" ", "")
     if not gmail_user or not gmail_app_pw or gmail_user.startswith("your_") or gmail_app_pw.startswith("your_"):
@@ -232,7 +218,6 @@ def send_application_email(
 
 def send_company_outreach_email(
     outreach_id: int,
-    dry_run: bool = False,
     ignore_hours: bool = False
 ) -> Tuple[bool, str]:
     """
@@ -294,18 +279,7 @@ def send_company_outreach_email(
         update_company_outreach(outreach_id, {"status": "approved", "error": window_msg})
         return False, window_msg
 
-    # 5. Dry-run
-    if dry_run:
-        msg = f"[DRY-RUN] Speculative email to {recipient_email} ('{outreach.get('email_subject')}') simulated successfully. No SMTP packet sent."
-        log_event("sender", msg)
-        update_company_outreach(outreach_id, {
-            "status": "approved",
-            "smtp_response": "DRY_RUN_SIMULATION",
-            "error": None
-        })
-        return True, msg
-
-    # 6. Credentials
+    # 5. Credentials
     gmail_user = settings.gmail_user.strip()
     gmail_app_pw = settings.gmail_app_password.strip().replace(" ", "")
     if not gmail_user or not gmail_app_pw or gmail_user.startswith("your_"):
@@ -390,44 +364,6 @@ def send_company_outreach_email(
     log_event("sender", success_msg)
     logger.info(success_msg)
     return True, success_msg
-
-
-def send_test_email(to_email: str) -> Tuple[bool, str]:
-    """Sends a live verification test email to verify Gmail SMTP SSL connection and authentication."""
-    gmail_user = settings.gmail_user.strip()
-    gmail_app_pw = settings.gmail_app_password.strip().replace(" ", "")
-    if not gmail_user or not gmail_app_pw:
-        return False, "GMAIL_USER and GMAIL_APP_PASSWORD are not configured."
-
-    msg = EmailMessage()
-    msg["From"] = f"{settings.candidate_name} <{gmail_user}>"
-    msg["To"] = to_email.strip()
-    msg["Subject"] = f"JobPilot SMTP Verification Test — {datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S %Z')}"
-    msg["Date"] = formatdate(localtime=True)
-    msg_id = make_msgid(domain="gmail.com")
-    msg["Message-ID"] = msg_id
-    body = (
-        f"Hello {settings.candidate_name},\n\n"
-        f"This is an automated verification email dispatched by JobPilot via Gmail SMTP SSL (smtp.gmail.com:465).\n\n"
-        f"Status: ALL SYSTEMS OPERATIONAL\n"
-        f"Timestamp: {datetime.now(IST).isoformat()}\n"
-        f"Sender: {mask_email(gmail_user)}\n"
-        f"Message-ID: {msg_id}\n\n"
-        f"Your email sending configuration is fully verified and working!\n"
-    )
-    msg.set_content(body)
-
-    try:
-        ctx = ssl.create_default_context()
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=ctx, timeout=25) as server:
-            server.login(gmail_user, gmail_app_pw)
-            server.send_message(msg)
-        log_event("sender", f"Test email successfully sent to {to_email}")
-        return True, f"Test email successfully sent to {to_email} via Gmail SMTP SSL (Message-ID: {msg_id})."
-    except Exception as e:
-        err = f"SMTP dispatch failed: {e}"
-        log_event("sender", err, level="ERROR")
-        return False, err
 
 
 def check_smtp_health() -> Tuple[bool, str]:

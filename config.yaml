@@ -219,3 +219,9 @@ company_discovery:
       website: "https://aero360.co.in"
       careers_url: "https://aero360.co.in/careers"
       field_tags: ["drone", "uav", "computer_vision", "surveillance"]
+
+gemini_model: "gemini-3.5-flash-lite"
+
+outreach:
+  require_contact_email: true
+
