@@ -121,7 +121,11 @@ def init_db(db_path: Optional[Path] = None):
                 role_tier TEXT,
                 role_lens TEXT,
                 company_id INTEGER,
-                canonical_key TEXT,
+                canonical_key TEXT UNIQUE,
+                title_norm TEXT,
+                city_norm TEXT,
+                apply_url_canon TEXT,
+                description_hash TEXT,
                 location_norm TEXT,
                 location_raw TEXT,
                 posted_at TIMESTAMP,
@@ -136,21 +140,122 @@ def init_db(db_path: Optional[Path] = None):
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_jobs_canonical ON jobs(canonical_key);")
+        cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_canonical ON jobs(canonical_key);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_jobs_apply_kind ON jobs(apply_kind);")
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS raw_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id INTEGER,
+                source TEXT NOT NULL,
+                external_id TEXT,
+                url TEXT,
+                payload_json TEXT,
+                fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_raw_jobs_src_ext ON raw_jobs(source, external_id);")
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS job_sources (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 job_id TEXT NOT NULL,
                 source TEXT NOT NULL,
-                external_id TEXT,
+                external_id TEXT NOT NULL,
                 url TEXT,
                 seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
             )
         """)
+        cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_job_sources_src_ext ON job_sources(source, external_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_job_sources_job_id ON job_sources(job_id);")
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS outreach (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id TEXT,
+                company_id INTEGER,
+                contact_email TEXT NOT NULL,
+                mode TEXT DEFAULT 'job_application',
+                idempotency_key TEXT UNIQUE NOT NULL,
+                score REAL,
+                score_basis TEXT DEFAULT 'rules',
+                status TEXT NOT NULL DEFAULT 'new',
+                resume_path TEXT,
+                email_subject TEXT,
+                email_body TEXT,
+                gmail_message_id TEXT,
+                gmail_uid INTEGER,
+                drafted_at TIMESTAMP,
+                sent_at TIMESTAMP,
+                replied_at TIMESTAMP,
+                followup_due TIMESTAMP,
+                followup_sent TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (company_id) REFERENCES companies(id)
+            );
+        """)
+        cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_outreach_idempotency ON outreach(idempotency_key);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_outreach_contact_email ON outreach(contact_email);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_outreach_status ON outreach(status);")
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS contact_ledger (
+                email TEXT PRIMARY KEY,
+                domain TEXT,
+                company_id INTEGER,
+                first_contacted_at TIMESTAMP,
+                last_contacted_at TIMESTAMP,
+                times_contacted INTEGER DEFAULT 0,
+                last_outreach_id INTEGER,
+                opted_out INTEGER DEFAULT 0,
+                bounced INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_contact_ledger_domain ON contact_ledger(domain);")
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS company_ledger (
+                company_id INTEGER PRIMARY KEY,
+                last_contacted_at TIMESTAMP,
+                total_outreach INTEGER DEFAULT 0,
+                cooldown_until TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (company_id) REFERENCES companies(id)
+            );
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS llm_budget (
+                day TEXT NOT NULL,
+                model TEXT NOT NULL,
+                requests INTEGER DEFAULT 0,
+                prompt_tokens INTEGER DEFAULT 0,
+                completion_tokens INTEGER DEFAULT 0,
+                cache_hits INTEGER DEFAULT 0,
+                blocked_calls INTEGER DEFAULT 0,
+                PRIMARY KEY (day, model)
+            );
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS llm_calls (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id INTEGER,
+                outreach_id INTEGER,
+                stage TEXT NOT NULL,
+                model TEXT NOT NULL,
+                tokens INTEGER DEFAULT 0,
+                cached INTEGER DEFAULT 0,
+                at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_llm_calls_run ON llm_calls(run_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_llm_calls_outreach ON llm_calls(outreach_id);")
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS applications (
@@ -185,15 +290,18 @@ def init_db(db_path: Optional[Path] = None):
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS status_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                application_id INTEGER NOT NULL,
+                outreach_id INTEGER,
+                application_id INTEGER,
                 from_status TEXT,
                 to_status TEXT NOT NULL,
                 changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 note TEXT,
-                FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE
+                FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
+                FOREIGN KEY (outreach_id) REFERENCES outreach(id) ON DELETE CASCADE
             )
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_status_history_app_id ON status_history(application_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_status_history_outreach_id ON status_history(outreach_id);")
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS runs (
@@ -796,4 +904,220 @@ def add_to_blocklist(email: str, reason: str = "Manual opt-out", db_path: Option
             INSERT OR IGNORE INTO blocklist (email, reason, added_at)
             VALUES (?, ?, CURRENT_TIMESTAMP)
         """, (email.strip().lower(), reason))
+        # Also mark opted_out in contact_ledger
+        cursor.execute("""
+            INSERT INTO contact_ledger (email, domain, opted_out, updated_at)
+            VALUES (?, ?, 1, CURRENT_TIMESTAMP)
+            ON CONFLICT(email) DO UPDATE SET opted_out = 1, updated_at = CURRENT_TIMESTAMP
+        """, (email.strip().lower(), email.strip().lower().split("@")[-1] if "@" in email else ""))
         conn.commit()
+
+
+# --- Ledger & Duplicate Protection ---
+
+def is_recipient_in_cooldown(email: str, cooldown_days: int = 30, db_path: Optional[Path] = None) -> Tuple[bool, Optional[str]]:
+    if not email:
+        return False, None
+    clean_email = email.lower().strip()
+    with get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT last_contacted_at, opted_out, bounced
+            FROM contact_ledger
+            WHERE email = ?
+        """, (clean_email,))
+        row = cursor.fetchone()
+        if not row:
+            return False, None
+
+        if row["opted_out"]:
+            return True, f"Recipient {clean_email} previously opted out"
+        if row["bounced"]:
+            return True, f"Recipient {clean_email} bounced on prior outreach"
+
+        if row["last_contacted_at"]:
+            try:
+                last_dt = datetime.fromisoformat(str(row["last_contacted_at"])[:19])
+                cutoff = datetime.now() - timedelta(days=cooldown_days)
+                if last_dt >= cutoff:
+                    days_ago = (datetime.now() - last_dt).days
+                    return True, f"Recipient contacted {days_ago} days ago (cooldown is {cooldown_days} days)"
+            except Exception:
+                pass
+    return False, None
+
+
+def is_company_in_cooldown_ledger(company_id: int, cooldown_days: int = 30, db_path: Optional[Path] = None) -> Tuple[bool, Optional[str]]:
+    if not company_id:
+        return False, None
+    with get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT cooldown_until, last_contacted_at
+            FROM company_ledger
+            WHERE company_id = ?
+        """, (company_id,))
+        row = cursor.fetchone()
+        if not row:
+            return False, None
+
+        if row["cooldown_until"]:
+            try:
+                cooldown_dt = datetime.fromisoformat(str(row["cooldown_until"])[:19])
+                if datetime.now() < cooldown_dt:
+                    return True, f"Company under cooldown until {row['cooldown_until']}"
+            except Exception:
+                pass
+
+        if row["last_contacted_at"]:
+            try:
+                last_dt = datetime.fromisoformat(str(row["last_contacted_at"])[:19])
+                cutoff = datetime.now() - timedelta(days=cooldown_days)
+                if last_dt >= cutoff:
+                    return True, f"Company contacted within last {cooldown_days} days"
+            except Exception:
+                pass
+    return False, None
+
+
+def create_or_get_outreach(
+    job_id: Optional[str],
+    company_id: Optional[int],
+    contact_email: str,
+    idempotency_key: str,
+    score: float = 0.0,
+    score_basis: str = "rules",
+    status: str = "new",
+    resume_path: Optional[str] = None,
+    email_subject: Optional[str] = None,
+    email_body: Optional[str] = None,
+    gmail_message_id: Optional[str] = None,
+    db_path: Optional[Path] = None
+) -> Tuple[int, bool]:
+    """
+    Inserts an outreach row with hard idempotency constraint.
+    Returns (outreach_id, is_new).
+    """
+    clean_email = contact_email.lower().strip()
+    with get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        if company_id:
+            cursor.execute("SELECT id FROM companies WHERE id = ?", (company_id,))
+            if not cursor.fetchone():
+                company_id = None
+
+        try:
+            cursor.execute("""
+                INSERT INTO outreach (
+                    job_id, company_id, contact_email, mode, idempotency_key,
+                    score, score_basis, status, resume_path, email_subject, email_body,
+                    gmail_message_id, created_at, updated_at
+                ) VALUES (?, ?, ?, 'job_application', ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """, (
+                job_id, company_id, clean_email, idempotency_key,
+                score, score_basis, status, resume_path, email_subject, email_body,
+                gmail_message_id
+            ))
+            conn.commit()
+            return cursor.lastrowid, True
+        except sqlite3.IntegrityError:
+            # Already exists - fetch existing row id
+            cursor.execute("SELECT id FROM outreach WHERE idempotency_key = ?", (idempotency_key,))
+            existing = cursor.fetchone()
+            return (existing["id"] if existing else 0), False
+
+
+def update_outreach_status(
+    outreach_id: int,
+    to_status: str,
+    note: Optional[str] = None,
+    gmail_message_id: Optional[str] = None,
+    db_path: Optional[Path] = None
+):
+    with get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT status, contact_email, company_id FROM outreach WHERE id = ?", (outreach_id,))
+        row = cursor.fetchone()
+        from_status = row["status"] if row else "unknown"
+
+        updates = ["status = ?", "updated_at = CURRENT_TIMESTAMP"]
+        params = [to_status]
+
+        if to_status == "drafted_gmail":
+            updates.append("drafted_at = CURRENT_TIMESTAMP")
+        elif to_status in ["sent", "sent_detected"]:
+            updates.append("sent_at = CURRENT_TIMESTAMP")
+            updates.append("followup_due = datetime('now', '+6 days')")
+        elif to_status == "replied":
+            updates.append("replied_at = CURRENT_TIMESTAMP")
+
+        if gmail_message_id:
+            updates.append("gmail_message_id = ?")
+            params.append(gmail_message_id)
+
+        params.append(outreach_id)
+        cursor.execute(f"UPDATE outreach SET {', '.join(updates)} WHERE id = ?", params)
+
+        # Record status history
+        hist_cols = {c[1] for c in cursor.execute("PRAGMA table_info(status_history)").fetchall()}
+        if "outreach_id" in hist_cols and "application_id" in hist_cols:
+            cursor.execute("""
+                INSERT INTO status_history (outreach_id, application_id, from_status, to_status, changed_at, note)
+                VALUES (?, NULL, ?, ?, CURRENT_TIMESTAMP, ?)
+            """, (outreach_id, from_status, to_status, note))
+        elif "outreach_id" in hist_cols:
+            cursor.execute("""
+                INSERT INTO status_history (outreach_id, from_status, to_status, changed_at, note)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)
+            """, (outreach_id, from_status, to_status, note))
+        else:
+            cursor.execute("""
+                INSERT INTO status_history (application_id, from_status, to_status, changed_at, note)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)
+            """, (outreach_id, from_status, to_status, note))
+
+        # Update ledgers if sent
+        if to_status in ["sent", "sent_detected"] and row:
+            clean_email = row["contact_email"]
+            comp_id = row["company_id"]
+            cursor.execute("""
+                INSERT INTO contact_ledger (email, domain, company_id, last_contacted_at, times_contacted, last_outreach_id)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP, 1, ?)
+                ON CONFLICT(email) DO UPDATE SET
+                    last_contacted_at = CURRENT_TIMESTAMP,
+                    times_contacted = contact_ledger.times_contacted + 1,
+                    last_outreach_id = excluded.last_outreach_id,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (clean_email, clean_email.split("@")[-1] if "@" in clean_email else "", comp_id, outreach_id))
+
+            if comp_id:
+                cursor.execute("""
+                    INSERT INTO company_ledger (company_id, last_contacted_at, total_outreach, cooldown_until)
+                    VALUES (?, CURRENT_TIMESTAMP, 1, datetime('now', '+30 days'))
+                    ON CONFLICT(company_id) DO UPDATE SET
+                        last_contacted_at = CURRENT_TIMESTAMP,
+                        total_outreach = company_ledger.total_outreach + 1,
+                        cooldown_until = datetime('now', '+30 days'),
+                        updated_at = CURRENT_TIMESTAMP
+                """, (comp_id,))
+
+        conn.commit()
+
+
+def save_raw_job(
+    run_id: Optional[int],
+    source: str,
+    external_id: Optional[str],
+    url: Optional[str],
+    payload_json: str,
+    db_path: Optional[Path] = None
+) -> int:
+    with get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO raw_jobs (run_id, source, external_id, url, payload_json, fetched_at)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        """, (run_id, source, external_id, url, payload_json))
+        conn.commit()
+        return cursor.lastrowid
+
