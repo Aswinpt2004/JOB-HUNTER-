@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}Outbox & Sent — JobPilot v2{% endblock %}
+{% block page_title %}Outreach & Sent Applications Audit Log{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-title">
+    <span>Sent Outreach History ({{ sent_items|length }})</span>
+    <span class="badge badge-emerald">Gmail SMTP (SSL:465) Audit Trail</span>
+  </div>
+
+  {% if sent_items %}
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th>Sent At (IST)</th>
+          <th>Role & Company</th>
+          <th>Recipient</th>
+          <th>Subject</th>
+          <th>Route</th>
+          <th>Status</th>
+          <th>Resume Attachment</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in sent_items %}
+        <tr>
+          <td style="font-size:0.8rem; color:var(--text-secondary); white-space:nowrap;">
+            {{ item.sent_at or item.applied_at }}
+          </td>
+          <td>
+            <div style="font-weight:600; color:#fff;">{{ item.title }}</div>
+            <div style="font-size:0.75rem; color:var(--text-secondary);">{{ item.company }}</div>
+          </td>
+          <td>
+            <code style="font-size:0.8rem; color:#60a5fa;">{{ item.recipient_email or 'Portal Apply' }}</code>
+          </td>
+          <td style="font-size:0.85rem; max-width:250px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+            {{ item.email_subject or 'Cold Application' }}
+          </td>
+          <td>
+            <span class="badge badge-blue">{{ item.route }}</span>
+          </td>
+          <td>
+            <span class="badge badge-emerald">{{ item.status }}</span>
+          </td>
+          <td>
+            {% if item.resume_path %}
+            <a href="/output/resumes/{{ item.resume_filename }}" target="_blank" class="btn btn-secondary btn-sm">PDF ↗</a>
+            {% else %}
+            <span style="font-size:0.75rem; color:var(--text-muted);">-</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center; padding:3rem; color:var(--text-muted);">
+    No outreach sent yet. Review pending applications on the Today dashboard and approve when ready.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+

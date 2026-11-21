@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+
+{% block title %}Pipeline — JobPilot v2{% endblock %}
+{% block page_title %}Application Pipeline Kanban{% endblock %}
+
+{% block content %}
+<div class="kanban-board">
+  <!-- 1. New -->
+  <div class="kanban-col">
+    <div class="kanban-header">
+      <span>New Discovered</span>
+      <span class="badge badge-gray">{{ columns.new|length }}</span>
+    </div>
+    <div class="kanban-body">
+      {% for j in columns.new %}
+      <div class="kanban-card">
+        <a href="/workbench/{{ j.id }}" style="font-weight:600; color:#fff; text-decoration:none;">{{ j.title }}</a>
+        <div style="font-size:0.75rem; color:var(--text-secondary);">{{ j.company }} • {{ j.location }}</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.35rem;">
+          <span class="badge badge-purple" style="font-size:0.65rem;">{{ j.apply_kind }}</span>
+          <a href="/workbench/{{ j.id }}" class="btn btn-primary btn-sm">Workbench</a>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- 2. Drafted -->
+  <div class="kanban-col">
+    <div class="kanban-header">
+      <span style="color:#60a5fa;">Drafted & Tailored</span>
+      <span class="badge badge-blue">{{ columns.drafted|length }}</span>
+    </div>
+    <div class="kanban-body">
+      {% for j in columns.drafted %}
+      <div class="kanban-card" style="border-left:3px solid #3b82f6;">
+        <a href="/workbench/{{ j.id }}" style="font-weight:600; color:#fff; text-decoration:none;">{{ j.title }}</a>
+        <div style="font-size:0.75rem; color:var(--text-secondary);">{{ j.company }}</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.35rem;">
+          <div style="display:flex; align-items:center; gap:0.35rem;">
+            <span style="font-size:0.75rem; color:#34d399; font-weight:600;">{{ j.match_score|default(85)|round(0) }}% fit</span>
+            {% if j.app_status == 'drafted_gmail' %}
+            <span class="badge badge-purple" style="font-size:0.6rem;">Gmail Draft</span>
+            {% endif %}
+          </div>
+          <form method="POST" action="/api/applications/{{ j.application_id }}/approve">
+            <button type="submit" class="btn btn-secondary btn-sm">Approve</button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- 3. Approved -->
+  <div class="kanban-col">
+    <div class="kanban-header">
+      <span style="color:#fbbf24;">Approved</span>
+      <span class="badge badge-amber">{{ columns.approved|length }}</span>
+    </div>
+    <div class="kanban-body">
+      {% for j in columns.approved %}
+      <div class="kanban-card" style="border-left:3px solid #f59e0b;">
+        <a href="/workbench/{{ j.id }}" style="font-weight:600; color:#fff; text-decoration:none;">{{ j.title }}</a>
+        <div style="font-size:0.75rem; color:var(--text-secondary);">{{ j.company }}</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.35rem;">
+          <span class="badge badge-amber" style="font-size:0.65rem;">{{ j.route }}</span>
+          <a href="/workbench/{{ j.id }}" class="btn btn-primary btn-sm">Send / Apply</a>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- 4. Emailed & Applied -->
+  <div class="kanban-col">
+    <div class="kanban-header">
+      <span style="color:#34d399;">Applied / Emailed</span>
+      <span class="badge badge-emerald">{{ columns.applied|length }}</span>
+    </div>
+    <div class="kanban-body">
+      {% for j in columns.applied %}
+      <div class="kanban-card" style="border-left:3px solid #10b981;">
+        <a href="/workbench/{{ j.id }}" style="font-weight:600; color:#fff; text-decoration:none;">{{ j.title }}</a>
+        <div style="font-size:0.75rem; color:var(--text-secondary);">{{ j.company }}</div>
+        <div style="font-size:0.7rem; color:var(--text-muted);">Applied: {{ j.applied_at or j.sent_at or 'Recently' }}</div>
+        <div style="display:flex; gap:0.25rem; margin-top:0.35rem;">
+          <form method="POST" action="/api/applications/{{ j.application_id }}/status">
+            <input type="hidden" name="status" value="replied">
+            <button type="submit" class="btn btn-secondary btn-sm" style="font-size:0.65rem;">Replied</button>
+          </form>
+          <form method="POST" action="/api/applications/{{ j.application_id }}/status">
+            <input type="hidden" name="status" value="interview">
+            <button type="submit" class="btn btn-success btn-sm" style="font-size:0.65rem;">Interview</button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- 5. Interview -->
+  <div class="kanban-col">
+    <div class="kanban-header">
+      <span style="color:#a855f7;">Interview Scheduled</span>
+      <span class="badge badge-purple">{{ columns.interview|length }}</span>
+    </div>
+    <div class="kanban-body">
+      {% for j in columns.interview %}
+      <div class="kanban-card" style="border-left:3px solid #a855f7;">
+        <a href="/workbench/{{ j.id }}" style="font-weight:600; color:#fff; text-decoration:none;">{{ j.title }}</a>
+        <div style="font-size:0.75rem; color:var(--text-secondary);">{{ j.company }}</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.35rem;">
+          <span class="badge badge-purple">In Progress</span>
+          <a href="/workbench/{{ j.id }}" class="btn btn-secondary btn-sm">Notes</a>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- 6. Offer / Rejected -->
+  <div class="kanban-col">
+    <div class="kanban-header">
+      <span>Completed / Closed</span>
+      <span class="badge badge-gray">{{ columns.closed|length }}</span>
+    </div>
+    <div class="kanban-body">
+      {% for j in columns.closed %}
+      <div class="kanban-card">
+        <div style="font-weight:600; color:#94a3b8;">{{ j.title }}</div>
+        <div style="font-size:0.75rem; color:var(--text-muted);">{{ j.company }}</div>
+        <div style="margin-top:0.35rem;">
+          <span class="badge {% if j.app_status == 'offer' %}badge-emerald{% else %}badge-rose{% endif %}" style="font-size:0.65rem;">
+            {{ j.app_status }}
+          </span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+

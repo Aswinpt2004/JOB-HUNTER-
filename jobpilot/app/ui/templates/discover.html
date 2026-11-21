@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+
+{% block title %}Discover Jobs — JobPilot v2{% endblock %}
+{% block page_title %}Job Discovery & Pipeline Ingestion{% endblock %}
+
+{% block content %}
+<!-- Filter & Search Toolbar -->
+<div class="card" style="margin-bottom: 1.5rem;">
+  <form method="GET" action="/discover" style="display:flex; flex-wrap:wrap; gap:1rem; align-items:center;">
+    <input type="text" name="search" class="input-text" placeholder="Search title or company..." value="{{ filters.search or '' }}" style="flex:1; min-width:200px;">
+
+    <select name="location" class="input-text">
+      <option value="">All Locations</option>
+      <option value="Bangalore" {% if filters.location == 'Bangalore' %}selected{% endif %}>Bangalore</option>
+      <option value="Kochi" {% if filters.location == 'Kochi' %}selected{% endif %}>Kochi</option>
+      <option value="Thiruvananthapuram" {% if filters.location == 'Thiruvananthapuram' %}selected{% endif %}>Thiruvananthapuram</option>
+      <option value="Kozhikode" {% if filters.location == 'Kozhikode' %}selected{% endif %}>Kozhikode</option>
+      <option value="Remote India" {% if filters.location == 'Remote India' %}selected{% endif %}>Remote India</option>
+    </select>
+
+    <select name="apply_kind" class="input-text">
+      <option value="">All Apply Routes</option>
+      <option value="email" {% if filters.apply_kind == 'email' %}selected{% endif %}>HR Email</option>
+      <option value="ats_greenhouse" {% if filters.apply_kind == 'ats_greenhouse' %}selected{% endif %}>Greenhouse</option>
+      <option value="ats_lever" {% if filters.apply_kind == 'ats_lever' %}selected{% endif %}>Lever</option>
+      <option value="ats_ashby" {% if filters.apply_kind == 'ats_ashby' %}selected{% endif %}>Ashby</option>
+      <option value="ats_workable" {% if filters.apply_kind == 'ats_workable' %}selected{% endif %}>Workable</option>
+      <option value="ats_smartrecruiters" {% if filters.apply_kind == 'ats_smartrecruiters' %}selected{% endif %}>SmartRecruiters</option>
+      <option value="linkedin" {% if filters.apply_kind == 'linkedin' %}selected{% endif %}>LinkedIn</option>
+      <option value="naukri" {% if filters.apply_kind == 'naukri' %}selected{% endif %}>Naukri</option>
+      <option value="indeed" {% if filters.apply_kind == 'indeed' %}selected{% endif %}>Indeed</option>
+    </select>
+
+    <button type="submit" class="btn btn-primary">Filter</button>
+    <a href="/discover" class="btn btn-secondary">Reset</a>
+
+    <div style="margin-left:auto; display:flex; gap:0.5rem;">
+      <button type="button" class="btn btn-secondary" onclick="document.getElementById('importModal').style.display='flex'">
+        + Import Job
+      </button>
+    </div>
+  </form>
+</div>
+
+<!-- Jobs Table -->
+<div class="card">
+  <div class="card-title">
+    <span>Discovered Positions ({{ total_count }} total)</span>
+    <span style="font-size:0.85rem; color:var(--text-secondary); font-weight:normal;">Showing page {{ page }} of {{ total_pages }}</span>
+  </div>
+
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th>Role & Company</th>
+          <th>Location</th>
+          <th>Sources</th>
+          <th>Route & Channel</th>
+          <th>Match Score</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for j in jobs %}
+        <tr>
+          <td>
+            <a href="/workbench/{{ j.id }}" style="font-weight:600; color:#fff; text-decoration:none;">{{ j.title }}</a>
+            <div style="font-size:0.8rem; color:var(--text-secondary); display:flex; align-items:center; gap:0.5rem;">
+              <span>{{ j.company }}</span>
+              {% if j.salary %}<span style="color:#34d399;">• {{ j.salary }}</span>{% endif %}
+            </div>
+          </td>
+          <td><span class="badge badge-gray">{{ j.location }}</span></td>
+          <td>
+            <span class="badge badge-purple" style="font-size:0.7rem;">{{ j.source }}</span>
+          </td>
+          <td>
+            {% if j.apply_kind == 'email' %}
+            <span class="badge badge-blue">Cold Email</span>
+            {% elif j.apply_kind.startswith('ats_') %}
+            <span class="badge badge-purple">ATS Assist</span>
+            {% else %}
+            <span class="badge badge-emerald">Apply Packet</span>
+            {% endif %}
+            {% if j.easy_apply %}
+            <span class="badge badge-amber" style="font-size:0.65rem;">Easy Apply</span>
+            {% endif %}
+          </td>
+          <td>
+            <span style="font-weight:700; color:{% if j.match_score and j.match_score >= 80 %}#34d399{% elif j.match_score and j.match_score >= 65 %}#60a5fa{% else %}#94a3b8{% endif %};">
+              {{ j.match_score|default('-') }}%
+            </span>
+          </td>
+          <td>
+            {% if j.app_status == 'emailed' or j.app_status == 'applied' %}
+            <span class="badge badge-emerald">{{ j.app_status }}</span>
+            {% elif j.app_status == 'approved' %}
+            <span class="badge badge-amber">Approved</span>
+            {% elif j.app_status == 'drafted' %}
+            <span class="badge badge-blue">Drafted</span>
+            {% else %}
+            <span class="badge badge-gray">New</span>
+            {% endif %}
+          </td>
+          <td>
+            <div style="display:flex; gap:0.35rem;">
+              <a href="/workbench/{{ j.id }}" class="btn btn-primary btn-sm">Workbench</a>
+              <a href="{{ j.url }}" target="_blank" class="btn btn-secondary btn-sm" title="Open Job Listing">↗</a>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination -->
+  {% if total_pages > 1 %}
+  <div style="display:flex; justify-content:center; gap:0.5rem; margin-top:1.5rem;">
+    {% if page > 1 %}
+    <a href="/discover?page={{ page - 1 }}" class="btn btn-secondary btn-sm">Previous</a>
+    {% endif %}
+    <span style="padding:0.35rem 0.75rem; color:var(--text-secondary); font-size:0.875rem;">Page {{ page }} of {{ total_pages }}</span>
+    {% if page < total_pages %}
+    <a href="/discover?page={{ page + 1 }}" class="btn btn-secondary btn-sm">Next</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+<!-- Import Modal -->
+<div id="importModal" class="modal-backdrop" style="display:none;" x-data="{ tab: 'url' }">
+  <div class="modal-content">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+      <h3 style="color:#fff; font-size:1.15rem; font-weight:700;">Import External Job</h3>
+      <button class="btn btn-secondary btn-sm" onclick="document.getElementById('importModal').style.display='none'">✕</button>
+    </div>
+
+    <div style="display:flex; gap:0.5rem; margin-bottom:1rem; border-bottom:1px solid var(--border-color); padding-bottom:0.5rem;">
+      <button class="btn btn-sm" :class="tab === 'url' ? 'btn-primary' : 'btn-secondary'" @click="tab = 'url'">Import from URL</button>
+      <button class="btn btn-sm" :class="tab === 'paste' ? 'btn-primary' : 'btn-secondary'" @click="tab = 'paste'">Paste JD Text</button>
+    </div>
+
+    <!-- URL Tab -->
+    <div x-show="tab === 'url'">
+      <form method="POST" action="/api/import/url" style="display:flex; flex-direction:column; gap:1rem;">
+        <div>
+          <label style="font-size:0.8rem; color:var(--text-secondary); display:block; margin-bottom:0.25rem;">Job Posting URL</label>
+          <input type="url" name="url" required class="input-text" style="width:100%;" placeholder="https://boards.greenhouse.io/... or https://jobs.lever.co/...">
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem;">
+          <div>
+            <label style="font-size:0.8rem; color:var(--text-secondary); display:block; margin-bottom:0.25rem;">Role Title (Optional)</label>
+            <input type="text" name="title" class="input-text" style="width:100%;" placeholder="AI/ML Engineer">
+          </div>
+          <div>
+            <label style="font-size:0.8rem; color:var(--text-secondary); display:block; margin-bottom:0.25rem;">Company Name (Optional)</label>
+            <input type="text" name="company" class="input-text" style="width:100%;" placeholder="Company Name">
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary" style="margin-top:0.5rem;">Fetch & Ingest Job</button>
+      </form>
+    </div>
+
+    <!-- Paste Tab -->
+    <div x-show="tab === 'paste'">
+      <form method="POST" action="/api/import/text" style="display:flex; flex-direction:column; gap:1rem;">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem;">
+          <div>
+            <label style="font-size:0.8rem; color:var(--text-secondary); display:block; margin-bottom:0.25rem;">Job Title</label>
+            <input type="text" name="title" required class="input-text" style="width:100%;" placeholder="Computer Vision Engineer">
+          </div>
+          <div>
+            <label style="font-size:0.8rem; color:var(--text-secondary); display:block; margin-bottom:0.25rem;">Company Name</label>
+            <input type="text" name="company" required class="input-text" style="width:100%;" placeholder="Tech Company">
+          </div>
+        </div>
+        <div>
+          <label style="font-size:0.8rem; color:var(--text-secondary); display:block; margin-bottom:0.25rem;">Location</label>
+          <input type="text" name="location" class="input-text" style="width:100%;" value="Bangalore">
+        </div>
+        <div>
+          <label style="font-size:0.8rem; color:var(--text-secondary); display:block; margin-bottom:0.25rem;">Job Description</label>
+          <textarea name="description" rows="6" required class="input-text" style="width:100%; resize:vertical;" placeholder="Paste complete job description requirements here..."></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary">Save & Tailor Job</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+

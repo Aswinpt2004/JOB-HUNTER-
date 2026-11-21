@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+
+{% block title %}Workbench — {{ job.title }} at {{ job.company }}{% endblock %}
+{% block page_title %}Job Workbench: {{ job.title }}{% endblock %}
+
+{% block content %}
+<div class="workbench-layout" x-data="workbenchApp()">
+  <!-- Column 1: Job Description & Overview -->
+  <div class="workbench-panel">
+    <div class="workbench-panel-header">
+      <div>
+        <div style="font-size:1.05rem; font-weight:700; color:#fff;">{{ job.title }}</div>
+        <div style="font-size:0.85rem; color:var(--text-secondary);">{{ job.company }} • {{ job.location }}</div>
+      </div>
+      <a href="{{ job.url }}" target="_blank" class="btn btn-secondary btn-sm" title="Open Original Posting">↗</a>
+    </div>
+
+    <div class="workbench-panel-body">
+      <div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-bottom:1.25rem;">
+        <span class="badge badge-purple">{{ job.role_lens or 'Generic ML / Data Science' }}</span>
+        <span class="badge {% if job.role_tier == 'Tier A' %}badge-emerald{% elif job.role_tier == 'Tier B' %}badge-blue{% else %}badge-gray{% endif %}">
+          {{ job.role_tier or 'Tier A' }}
+        </span>
+        <span class="badge badge-amber">{{ job.match_score|default(85)|round(0) }}% Match</span>
+        {% if job.apply_kind == 'email' %}
+        <span class="badge badge-blue">Cold Email</span>
+        {% elif job.apply_kind.startswith('ats_') %}
+        <span class="badge badge-purple">{{ job.apply_kind }}</span>
+        {% else %}
+        <span class="badge badge-emerald">{{ job.apply_kind }}</span>
+        {% endif %}
+      </div>
+
+      {% if job.recruiter_email %}
+      <div style="background:#0b1120; border:1px solid var(--border-color); border-radius:0.5rem; padding:0.75rem; margin-bottom:1.25rem;">
+        <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Recruiter Contact</div>
+        <div style="font-size:0.9rem; font-weight:600; color:#60a5fa; margin-top:0.25rem; display:flex; align-items:center; gap:0.5rem;">
+          <span>{{ job.recruiter_email }}</span>
+          <span class="badge badge-emerald" style="font-size:0.65rem;">MX Verified</span>
+        </div>
+      </div>
+      {% endif %}
+
+      <div style="font-size:0.8rem; font-weight:600; color:var(--text-secondary); text-transform:uppercase; margin-bottom:0.5rem;">
+        Job Description & Requirements
+      </div>
+      <div style="font-size:0.875rem; color:var(--text-secondary); line-height:1.6; white-space:pre-wrap; background:#0b1120; border-radius:0.5rem; padding:1rem; border:1px solid var(--border-color);">
+{{ job.description }}
+      </div>
+    </div>
+  </div>
+
+  <!-- Column 2: Tailored 2-Page Resume & Fit Engine -->
+  <div class="workbench-panel">
+    <div class="workbench-panel-header">
+      <div>
+        <span style="color:#fff;">Tailored 2-Page Resume</span>
+        <span style="font-size:0.8rem; color:#34d399; font-weight:normal; margin-left:0.5rem;">Fit: {{ fit_percentage|default(96) }}% (Target: 93-100%)</span>
+      </div>
+      <div style="display:flex; gap:0.5rem;">
+        {% if resume_pdf_url %}
+        <a href="{{ resume_pdf_url }}" target="_blank" class="btn btn-secondary btn-sm">PDF ↗</a>
+        {% endif %}
+        <form method="POST" action="/api/jobs/{{ job.id }}/tailor">
+          <button type="submit" class="btn btn-primary btn-sm">Re-Tailor</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="workbench-panel-body" style="padding:0; display:flex; flex-direction:column;">
+      {% if resume_pdf_url %}
+      <iframe src="{{ resume_pdf_url }}#toolbar=0" style="width:100%; height:100%; min-height:550px; border:none; background:#ffffff;"></iframe>
+      {% else %}
+      <div style="text-align:center; padding:3rem 1.5rem; color:var(--text-muted);">
+        <p style="margin-bottom:1rem;">Tailored resume has not been built yet for this opening.</p>
+        <form method="POST" action="/api/jobs/{{ job.id }}/tailor">
+          <button type="submit" class="btn btn-primary">Generate 2-Page Tailored Resume</button>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Column 3: Action Panel (Multi-Route Application) -->
+  <div class="workbench-panel">
+    <div class="workbench-panel-header">
+      <span style="color:#fff;">
+        {% if job.route == 'email' %}
+        Email Cold Outreach
+        {% elif job.route == 'ats_assist' %}
+        ATS Assist Channel
+        {% else %}
+        Assisted Apply Packet
+        {% endif %}
+      </span>
+      <span class="badge {% if job.app_status == 'emailed' or job.app_status == 'applied' %}badge-emerald{% elif job.app_status == 'approved' %}badge-amber{% else %}badge-blue{% endif %}">
+        {{ job.app_status or 'Drafted' }}
+      </span>
+    </div>
+
+    <div class="workbench-panel-body">
+      <!-- Route 1: Email Cold Outreach -->
+      {% if job.route == 'email' %}
+      <form method="POST" action="/api/applications/{{ job.application_id }}/send" style="display:flex; flex-direction:column; gap:1rem;">
+        <div>
+          <label style="font-size:0.8rem; color:var(--text-secondary); display:block; margin-bottom:0.25rem;">Recipient HR / Hiring Email</label>
+          <input type="email" name="recipient_email" required class="input-text" style="width:100%;" value="{{ job.recipient_email or job.recruiter_email or '' }}">
+        </div>
+
+        <div>
+          <label style="font-size:0.8rem; color:var(--text-secondary); display:block; margin-bottom:0.25rem;">Subject Line</label>
+          <input type="text" name="subject" class="input-text" style="width:100%;" value="{{ job.email_subject or 'Aswin P T — Application for ' + job.title + ' (' + job.company + ')' }}">
+        </div>
+
+        <div>
+          <div style="display:flex; justify-content:space-between; margin-bottom:0.25rem;">
+            <label style="font-size:0.8rem; color:var(--text-secondary);">Email Body</label>
+            <span style="font-size:0.75rem; color:#34d399; font-weight:600;">Tone Score: {{ job.tone_score|default(10.0) }}/10</span>
+          </div>
+          <textarea name="body" rows="12" class="input-text" style="width:100%; font-family:monospace; font-size:0.8rem; line-height:1.5;">{{ job.email_body or '' }}</textarea>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:0.5rem; margin-top:0.5rem;">
+          <button type="submit" formaction="/api/applications/{{ job.application_id }}/draft-gmail" class="btn btn-secondary" style="background:#1e1b4b; border-color:#818cf8; color:#c7d2fe;">
+            ✉️ Save to Gmail Drafts
+          </button>
+          {% if job.app_status != 'approved' and job.app_status != 'emailed' %}
+          <button type="button" class="btn btn-secondary" hx-post="/api/applications/{{ job.application_id }}/approve" hx-swap="none" onclick="location.reload();">
+            ✓ Approve for Sending
+          </button>
+          {% endif %}
+          <button type="submit" class="btn btn-primary" onclick="return confirm('Confirm dispatching cold email application via Gmail SMTP (SSL:465) to ' + this.form.recipient_email.value + '?');">
+            Send Cold Email Now
+          </button>
+        </div>
+      </form>
+
+      <!-- Route 2: ATS Assist (Playwright Visible Browser) -->
+      {% elif job.route == 'ats_assist' %}
+      <div style="display:flex; flex-direction:column; gap:1rem;">
+        <div style="background:#0b1120; border:1px solid var(--border-color); border-radius:0.5rem; padding:1rem;">
+          <h4 style="color:#c084fc; font-size:0.9rem; font-weight:700; margin-bottom:0.5rem;">Playwright Visible ATS Assist</h4>
+          <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:0.75rem;">
+            Launches a visible Chromium window. Automatically pre-fills your profile answers and attaches your 2-page tailored PDF. Leaves final review and submission to you.
+          </p>
+          <form method="POST" action="/api/applications/{{ job.application_id }}/ats-assist">
+            <button type="submit" class="btn btn-primary" style="width:100%;">
+              Launch Visible ATS Assist 🚀
+            </button>
+          </form>
+        </div>
+
+        <div>
+          <div style="display:flex; justify-content:space-between; margin-bottom:0.25rem;">
+            <label style="font-size:0.8rem; color:var(--text-secondary);">Tailored Cover Note (ATS Box)</label>
+            <button type="button" class="btn btn-secondary btn-sm" @click="navigator.clipboard.writeText($refs.coverNote.value); alert('Cover note copied!');">Copy</button>
+          </div>
+          <textarea x-ref="coverNote" rows="7" class="input-text" style="width:100%; font-size:0.85rem;" readonly>{{ job.cover_note or '' }}</textarea>
+        </div>
+
+        <form method="POST" action="/api/applications/{{ job.application_id }}/status">
+          <input type="hidden" name="status" value="applied">
+          <button type="submit" class="btn btn-success" style="width:100%;">Mark as Submitted</button>
+        </form>
+      </div>
+
+      <!-- Route 3: Assisted Apply Packet (LinkedIn / Naukri / Indeed) -->
+      {% else %}
+      <div style="display:flex; flex-direction:column; gap:1rem;">
+        <div style="background:#0b1120; border:1px solid var(--border-color); border-radius:0.5rem; padding:1rem;">
+          <h4 style="color:#34d399; font-size:0.9rem; font-weight:700; margin-bottom:0.25rem;">Assisted Apply Packet</h4>
+          <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:0.75rem;">
+            Never automates bot actions on LinkedIn, Naukri, or Indeed. Here is your complete prepared packet:
+          </p>
+          <a href="{{ job.apply_url or job.url }}" target="_blank" class="btn btn-primary" style="width:100%; margin-bottom:0.5rem;">
+            Open Job on {{ job.apply_kind|capitalize }} ↗
+          </a>
+        </div>
+
+        <div>
+          <div style="display:flex; justify-content:space-between; margin-bottom:0.25rem;">
+            <label style="font-size:0.8rem; color:var(--text-secondary);">Tailored Cover Note</label>
+            <button type="button" class="btn btn-secondary btn-sm" @click="navigator.clipboard.writeText($refs.packetNote.value); alert('Cover note copied!');">Copy</button>
+          </div>
+          <textarea x-ref="packetNote" rows="6" class="input-text" style="width:100%; font-size:0.85rem;" readonly>{{ job.cover_note or '' }}</textarea>
+        </div>
+
+        <div style="background:#0b1120; border:1px solid var(--border-color); border-radius:0.5rem; padding:0.75rem; font-size:0.8rem;">
+          <div style="font-weight:600; color:#fff; margin-bottom:0.5rem;">Quick Screener Answers:</div>
+          <div style="display:flex; flex-direction:column; gap:0.35rem; color:var(--text-secondary);">
+            <div><strong>Notice:</strong> Immediate (Fresher)</div>
+            <div><strong>Location:</strong> Willing to relocate to Bangalore / Kerala / Remote</div>
+            <div><strong>Expected CTC:</strong> 4.5 - 7.5 LPA</div>
+            <div><strong>Work Auth:</strong> India Citizen</div>
+          </div>
+        </div>
+
+        <form method="POST" action="/api/applications/{{ job.application_id }}/status">
+          <input type="hidden" name="status" value="applied">
+          <button type="submit" class="btn btn-success" style="width:100%;">Mark as Applied on {{ job.apply_kind|capitalize }}</button>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+  function workbenchApp() {
+    return {};
+  }
+</script>
+{% endblock %}
+

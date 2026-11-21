@@ -225,3 +225,63 @@ gemini_model: "gemini-3.5-flash-lite"
 outreach:
   require_contact_email: true
 
+sources:
+  adzuna:
+    enabled: true
+    country: "in"
+    results_per_page: 25
+  jooble:
+    enabled: true
+  careerjet:
+    enabled: true
+    locale_code: "en_IN"
+  jsearch:
+    enabled: true
+  remotive:
+    enabled: true
+  arbeitnow:
+    enabled: true
+  ats:
+    enabled: true
+    greenhouse_boards:
+      - "inmobi"
+      - "groww"
+      - "thoughtworks"
+      - "canonical"
+      - "gitlab"
+      - "slice"
+    lever_boards:
+      - "meesho"
+      - "palantir"
+      - "cred"
+    ashby_boards:
+      - "postman"
+      - "zapier"
+    workable_accounts:
+      - "browserstack"
+    smartrecruiters_companies:
+      - "bosch"
+  kerala_parks:
+    enabled: true
+    technopark: true
+    infopark: true
+  company_careers:
+    enabled: true
+
+apply_routes:
+  email:
+    daily_cap: 15
+    delay_min_seconds: 60
+    delay_max_seconds: 180
+    sending_hours_start: 9
+    sending_hours_end: 18
+    cooldown_days_per_company: 30
+    followup_days: 6
+  ats_assist:
+    daily_cap: 25
+    headless: false
+    fill_delay_ms: 100
+  packet:
+    output_dir: "output/packets"
+
+

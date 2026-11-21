@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}Sources & Runs — JobPilot v2{% endblock %}
+{% block page_title %}Multi-Source Discovery Engine{% endblock %}
+
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+  <div>
+    <h2 style="font-size:1.1rem; color:#fff; font-weight:700;">Configured Source Plugins</h2>
+    <p style="font-size:0.85rem; color:var(--text-secondary);">Direct ATS feeds, Aggregator APIs, Regional IT Parks, and Remote Job Boards.</p>
+  </div>
+  <form method="POST" action="/api/sources/run-all">
+    <button type="submit" class="btn btn-primary">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+      Run All Configured Sources
+    </button>
+  </form>
+</div>
+
+<!-- Sources Grid -->
+<div class="grid-cols-4" style="margin-bottom:2rem;">
+  {% for s in sources %}
+  <div class="card" style="margin-bottom:0; display:flex; flex-direction:column; justify-content:space-between;">
+    <div>
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.75rem;">
+        <h3 style="font-size:1rem; font-weight:700; color:#fff;">{{ s.display_name }}</h3>
+        {% if s.is_configured %}
+        <span class="badge badge-emerald" style="font-size:0.65rem;">Ready</span>
+        {% else %}
+        <span class="badge badge-amber" style="font-size:0.65rem;">Key Needed</span>
+        {% endif %}
+      </div>
+      <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:1rem;">{{ s.description }}</p>
+    </div>
+
+    <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--border-color); padding-top:0.75rem;">
+      <span style="font-size:0.75rem; color:var(--text-muted);">{{ s.jobs_count }} recorded</span>
+      <form method="POST" action="/api/sources/{{ s.name }}/run">
+        <button type="submit" class="btn btn-secondary btn-sm" {% if not s.is_configured %}disabled title="Add API Key in .env"{% endif %}>
+          Run Now
+        </button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Recent Runs Table -->
+<div class="card">
+  <div class="card-title">
+    <span>Recent Discovery & Processing Runs</span>
+    <span class="badge badge-gray">In-Process Scheduler Runs</span>
+  </div>
+
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th>Run ID</th>
+          <th>Type / Source</th>
+          <th>Started At</th>
+          <th>Finished At</th>
+          <th>Status</th>
+          <th>Ingestion Summary</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in runs %}
+        <tr>
+          <td><code style="font-size:0.8rem;">#{{ r.id }}</code></td>
+          <td><strong>{{ r.type }}</strong></td>
+          <td style="font-size:0.8rem; color:var(--text-secondary);">{{ r.started_at }}</td>
+          <td style="font-size:0.8rem; color:var(--text-secondary);">{{ r.finished_at or 'Running...' }}</td>
+          <td>
+            {% if r.status == 'success' %}
+            <span class="badge badge-emerald">Success</span>
+            {% elif r.status == 'running' %}
+            <span class="badge badge-amber">Running</span>
+            {% else %}
+            <span class="badge badge-rose">{{ r.status }}</span>
+            {% endif %}
+          </td>
+          <td>
+            <code style="font-size:0.75rem; color:#94a3b8;">{{ r.counts_json }}</code>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+

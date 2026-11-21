@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Follow-ups — JobPilot v2{% endblock %}
+{% block page_title %}6-Day Follow-up Manager{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-title">
+    <span>Eligible Applications (6+ Days Without Reply)</span>
+    <span class="badge badge-purple">Max 1 Follow-up Guardrail</span>
+  </div>
+
+  <p style="font-size:0.875rem; color:var(--text-secondary); margin-bottom:1.5rem;">
+    JobPilot strictly limits follow-ups to <strong>at most one polite message</strong> sent at least 6 days after initial outreach. It respects candidate-recruiter professional boundaries and includes the mandatory opt-out clause.
+  </p>
+
+  {% if due_followups %}
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th>Role & Company</th>
+          <th>Initial Send Date</th>
+          <th>Recipient</th>
+          <th>Days Elapsed</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in due_followups %}
+        <tr>
+          <td>
+            <div style="font-weight:600; color:#fff;">{{ f.title }}</div>
+            <div style="font-size:0.75rem; color:var(--text-secondary);">{{ f.company }}</div>
+          </td>
+          <td style="font-size:0.8rem; color:var(--text-secondary);">{{ f.sent_at }}</td>
+          <td><code style="color:#60a5fa;">{{ f.recipient_email }}</code></td>
+          <td><span class="badge badge-amber">{{ f.days_elapsed }} days</span></td>
+          <td>
+            <a href="/workbench/{{ f.id }}" class="btn btn-primary btn-sm">Review & Follow-up</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center; padding:3rem; color:var(--text-muted);">
+    No applications are currently due for follow-up. Check back after sent emails age past 6 business days.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+

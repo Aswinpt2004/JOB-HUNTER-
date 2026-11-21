@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block title %}Settings & Health — JobPilot v2{% endblock %}
+{% block page_title %}System Health & Safeguards Configuration{% endblock %}
+
+{% block content %}
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; margin-bottom:2rem;">
+  <!-- System Health & Credentials -->
+  <div class="card">
+    <div class="card-title">System Health & API Credentials</div>
+    <div style="display:flex; flex-direction:column; gap:1rem; font-size:0.875rem;">
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:0.75rem;">
+        <div>
+          <div style="font-weight:600; color:#fff;">Google Gemini LLM</div>
+          <div style="font-size:0.75rem; color:var(--text-muted);">Model: {{ gemini_model }}</div>
+        </div>
+        <div>
+          {% if gemini_configured %}
+          <span class="badge badge-emerald">Configured</span>
+          {% else %}
+          <span class="badge badge-rose">Missing Key</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:0.75rem;">
+        <div>
+          <div style="font-weight:600; color:#fff;">Gmail SMTP (SSL:465)</div>
+          <div style="font-size:0.75rem; color:var(--text-muted);">Host: {{ smtp_host }} • User: {{ smtp_user_masked }}</div>
+        </div>
+        <div style="display:flex; gap:0.5rem; align-items:center;">
+          {% if smtp_configured %}
+          <span class="badge badge-emerald">Configured</span>
+          {% else %}
+          <span class="badge badge-rose">Missing Credentials</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:0.75rem;">
+        <div>
+          <div style="font-weight:600; color:#fff;">Today's LLM Token Consumption</div>
+          <div style="font-size:0.75rem; color:var(--text-muted);">Daily Ceiling: 350,000 tokens / 250 requests</div>
+        </div>
+        <div style="font-weight:700; color:#60a5fa;">
+          {{ llm_usage.total_tokens }} toks ({{ llm_usage.request_count }} reqs)
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <div style="font-weight:600; color:#fff;">Database Engine</div>
+          <div style="font-size:0.75rem; color:var(--text-muted);">SQLite local storage</div>
+        </div>
+        <span class="badge badge-blue">{{ db_size_mb }} MB</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Operational Guardrails -->
+  <div class="card">
+    <div class="card-title">Production Guardrails (Enforced)</div>
+    <div style="display:flex; flex-direction:column; gap:0.85rem; font-size:0.875rem;">
+      <div style="display:flex; justify-content:space-between; border-bottom:1px solid var(--border-color); padding-bottom:0.5rem;">
+        <span style="color:var(--text-secondary);">Daily Email Cap:</span>
+        <span style="font-weight:600;">15 sends per calendar day</span>
+      </div>
+      <div style="display:flex; justify-content:space-between; border-bottom:1px solid var(--border-color); padding-bottom:0.5rem;">
+        <span style="color:var(--text-secondary);">Sending Hours (IST):</span>
+        <span style="font-weight:600; color:#34d399;">09:00 — 18:00 IST (Asia/Kolkata)</span>
+      </div>
+      <div style="display:flex; justify-content:space-between; border-bottom:1px solid var(--border-color); padding-bottom:0.5rem;">
+        <span style="color:var(--text-secondary);">Randomized Pacing:</span>
+        <span style="font-weight:600;">60 to 180 seconds spacing</span>
+      </div>
+      <div style="display:flex; justify-content:space-between; border-bottom:1px solid var(--border-color); padding-bottom:0.5rem;">
+        <span style="color:var(--text-secondary);">Company Cooldown:</span>
+        <span style="font-weight:600;">30 days per company</span>
+      </div>
+      <div style="display:flex; justify-content:space-between; border-bottom:1px solid var(--border-color); padding-bottom:0.5rem;">
+        <span style="color:var(--text-secondary);">Follow-up Limit:</span>
+        <span style="font-weight:600;">Exactly 1 follow-up at 6+ days</span>
+      </div>
+      <div style="display:flex; justify-content:space-between;">
+        <span style="color:var(--text-secondary);">Resume Fit Engine:</span>
+        <span style="font-weight:600; color:#34d399;">93% — 100% 2-page target fill</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Blocklist Management -->
+<div class="card">
+  <div class="card-title">
+    <span>Blocklist & Opt-Outs</span>
+    <span class="badge badge-rose">{{ blocklist|length }} Emails</span>
+  </div>
+
+  <p style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:1rem;">
+    Any company or recruiter address added here will be completely blocked from any future outreach.
+  </p>
+
+  <form method="POST" action="/api/blocklist/add" style="display:flex; gap:0.75rem; margin-bottom:1.5rem; max-width:600px;">
+    <input type="email" name="email" required placeholder="recruiter@example.com" class="input-text" style="flex:1;">
+    <input type="text" name="reason" placeholder="Reason (e.g. Opt-out request)" class="input-text" style="flex:1;">
+    <button type="submit" class="btn btn-danger">Block Address</button>
+  </form>
+
+  {% if blocklist %}
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th>Email Address</th>
+          <th>Reason</th>
+          <th>Added At</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in blocklist %}
+        <tr>
+          <td><code style="color:#fb7185;">{{ b.email }}</code></td>
+          <td>{{ b.reason or 'User opt-out' }}</td>
+          <td style="font-size:0.8rem; color:var(--text-secondary);">{{ b.added_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="font-size:0.85rem; color:var(--text-muted);">No addresses blocklisted.</div>
+  {% endif %}
+</div>
+{% endblock %}
+

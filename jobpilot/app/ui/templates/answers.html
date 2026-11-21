@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Profile & Answers — JobPilot v2{% endblock %}
+{% block page_title %}Candidate Profile & ATS Answers{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-title">
+    <span>Pre-Fill Answers for ATS Assist & Screener Forms</span>
+    <span class="badge badge-emerald">Synced with data/answers.json</span>
+  </div>
+
+  <p style="font-size:0.875rem; color:var(--text-secondary); margin-bottom:1.5rem;">
+    These answers are used by <strong>ATS Assist</strong> to pre-fill application questions automatically, and by the <strong>Assisted Apply Packet</strong> for 1-click clipboard answers. Replace any <code>[FILL]</code> placeholders with your accurate details.
+  </p>
+
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 25%;">Question / Key</th>
+          <th style="width: 55%;">Your Value</th>
+          <th style="width: 10%;">Status</th>
+          <th style="width: 10%;">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for key, item in answers.items() %}
+        <tr>
+          <td>
+            <code style="font-weight:600; color:#fff;">{{ key }}</code>
+          </td>
+          <td>
+            <form method="POST" action="/api/answers/update" style="display:flex; gap:0.5rem; align-items:center;">
+              <input type="hidden" name="key" value="{{ key }}">
+              <input type="text" name="value" value="{{ item.value }}" class="input-text" style="flex:1; {% if item.needs_fill %}border-color:#f59e0b; color:#fbbf24;{% endif %}">
+              <button type="submit" class="btn btn-secondary btn-sm">Save</button>
+            </form>
+          </td>
+          <td>
+            {% if item.needs_fill %}
+            <span class="badge badge-amber">[FILL] Missing</span>
+            {% else %}
+            <span class="badge badge-emerald">Ready</span>
+            {% endif %}
+          </td>
+          <td>
+            <span style="font-size:0.75rem; color:var(--text-muted);">Inline Save</span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
