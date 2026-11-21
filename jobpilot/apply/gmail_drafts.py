@@ -272,6 +272,13 @@ def draft_all_qualified_jobs_to_gmail(
             # 1. Tailor Resume
             tailored = tailor_resume_for_job(job_obj)
 
+            # Strict 75+ Score Enforcement
+            effective_score = tailored.match_score or match_res.match_score
+            if effective_score < min_score or tailored.target_tier == "reject":
+                logger.info("Skipping %s at %s: effective score %.1f < %.1f", title, company, effective_score, min_score)
+                skipped_count += 1
+                continue
+
             # 2. Build 2-Page PDF
             pdf_path, fill_ratio = generate_tailored_pdf(tailored, job_obj.id, job_obj.company)
 

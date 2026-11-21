@@ -85,15 +85,42 @@ def are_skills_equivalent(skill1: str, skill2: str) -> bool:
     return False
 
 
+NON_TECH_TITLES: List[str] = [
+    "sales", "marketing", "recruiter", "talent acquisition", "hr ", "hr-", "human resource",
+    "accountant", "accounting", "finance", "graphic designer", "video editor", "academic counsellor",
+    "counsellor", "content writer", "copywriter", "draughtsman", "telecaller", "telesales",
+    "occupational health", "safety specialist", "iso 45001", "nurse", "medical", "legal", "lawyer",
+    "civil", "mechanical", "electrical site", "customer support", "customer care", "bpo", "call center",
+    "operations executive", "admin executive", "office assistant", "receptionist", "business development",
+    "bde", "procurement", "supply chain", "logistics", "cook", "chef", "driver", "security guard",
+    "housekeeping", "storekeeper", "delivery"
+]
+
+CORE_TECH_MARKERS: List[str] = [
+    "machine learning", "deep learning", "ai ", "ai-", "/ai", "(ai)", "artificial intelligence",
+    "data scientist", "data science", "data analyst", "data engineer", "computer vision", "opencv",
+    "nlp", "natural language", "llm", "genai", "generative ai", "rag", "pytorch", "tensorflow",
+    "software engineer", "software developer", "python developer", "python engineer", "python backend",
+    "backend developer", "backend engineer", "full stack", "fullstack", "developer", "programmer",
+    "algorithm", "neural", "yolo", "fastapi", "django", "flask", "research intern", "ai intern",
+    "ml intern", "data intern", "software intern", "technical consultant"
+]
+
+
 def classify_role_tier_and_lens(title: str, description: str = "") -> Tuple[str, str]:
     """Classifies job into role tier (Tier A, Tier B, Tier C, reject) and chooses optimal lens."""
     t_clean = f"{title} {description}".lower()
     title_low = title.lower()
 
-    # Reject non-technical or management roles
-    for neg in ["sales", "marketing", "recruiter", "hr manager", "accountant", "graphic designer"]:
+    # 1. Reject explicit non-technical titles
+    for neg in NON_TECH_TITLES:
         if neg in title_low:
-            return "reject", "Generic ML / Data Science"
+            return "reject", "Non-Technical / Irrelevant"
+
+    # 2. Gate: Job MUST have at least one technical marker in title or description
+    has_tech_marker = any(m in title_low or m in t_clean for m in CORE_TECH_MARKERS)
+    if not has_tech_marker:
+        return "reject", "Non-Technical / Irrelevant"
 
     # Computer Vision / Drone / Surveillance Lens
     if any(k in t_clean for k in ["computer vision", "opencv", "yolo", "rt-detr", "tracking", "bytetrack", "drone", "uav", "surveillance", "video analytics", "image processing", "csrnet"]):
@@ -112,14 +139,18 @@ def classify_role_tier_and_lens(title: str, description: str = "") -> Tuple[str,
         return "Tier B", "Federated Learning / Graph Neural Networks"
 
     # Python Backend / FastAPI Lens
-    if any(k in t_clean for k in ["fastapi", "python backend", "backend developer", "python developer", "django", "rest api"]):
+    if any(k in t_clean for k in ["fastapi", "python backend", "backend developer", "python developer", "django", "rest api", "python"]):
         return "Tier C", "Python Backend / FastAPI / Scalable Systems"
 
-    # General Machine Learning
-    if any(k in t_clean for k in ["machine learning", "deep learning", "ai engineer", "data science", "pytorch", "tensorflow"]):
+    # General Machine Learning / AI
+    if any(k in t_clean for k in ["machine learning", "deep learning", "ai engineer", "data science", "pytorch", "tensorflow", "data scientist", "data analyst"]):
         return "Tier B", "Generic ML / Data Science"
 
-    return "Tier C", "Generic ML / Data Science"
+    # Check title explicitly
+    if any(m in title_low for m in ["developer", "engineer", "programmer", "analyst"]):
+        return "Tier C", "Generic ML / Data Science"
+
+    return "reject", "Non-Technical / Irrelevant"
 
 
 def calculate_match_score(
@@ -128,10 +159,13 @@ def calculate_match_score(
     role_tier: str
 ) -> Tuple[float, List[str], List[str]]:
     """Calculates weighted match score between 0.0 and 100.0."""
+    if role_tier == "reject":
+        return 35.0, [], []
+
     if not jd_skills:
-        # Fallback based on tier
-        tier_scores = {"Tier A": 85.0, "Tier B": 78.0, "Tier C": 70.0, "reject": 40.0}
-        return tier_scores.get(role_tier, 65.0), list(candidate_skills)[:5], []
+        # Fallback only for recognized technical tiers
+        tier_scores = {"Tier A": 82.0, "Tier B": 76.0, "Tier C": 68.0}
+        return tier_scores.get(role_tier, 50.0), list(candidate_skills)[:3], []
 
     matched: List[str] = []
     missing: List[str] = []
@@ -154,7 +188,11 @@ def calculate_match_score(
         else:
             missing.append(skill)
 
-    score = (matched_weight / total_weight * 100.0) if total_weight > 0 else 75.0
+    if total_weight > 0:
+        score = (matched_weight / total_weight * 100.0)
+    else:
+        score = 75.0 if role_tier in ["Tier A", "Tier B"] else 60.0
+
     return round(score, 1), matched, missing
 
 
